@@ -1,7 +1,7 @@
 import pygame, sys, copy, os
-import board  # <-- We import our new board module
-from clock import ChessClock
-from clock import format_time
+from . import board  # Changed to relative import
+from .clock import ChessClock  # Changed to relative import
+from .clock import format_time  # Changed to relative import
 import importlib.resources as pkg_resources
 from . import assets  # assets folder should be a package
 
