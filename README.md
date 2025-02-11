@@ -1,7 +1,7 @@
 # Chess Builder
 
 A custom chess variant in Pygame featuring:
-- **Gold Collection**: Pawns can accumulate gold when it’s your turn and your side is not in check.
+- **Gold Collection**: Pawns can accumulate gold when it's your turn and your side is not in check.
 - **Piece Purchases**: Spend gold to buy and place new pieces near your king.
 - **Promotion Choices**: Pawns can promote with an interactive menu.
 - **Optional Time Controls**: A built-in chess clock for timed games.
@@ -9,11 +9,11 @@ A custom chess variant in Pygame featuring:
 ## Features
 
 1. **Gold Accumulation**  
-   - When it’s your turn and you’re not in check, click a pawn you’ve already selected once to collect gold.  
+   - When it's your turn and you're not in check, click a pawn you've already selected once to collect gold.  
    - Captured pieces add their accumulated gold to the capturing piece.
 
 2. **Purchases**  
-   - Kings can open a purchase overlay by clicking on them again (when it’s your turn).  
+   - Kings can open a purchase overlay by clicking on them again (when it's your turn).  
    - Spend gold to place new pieces next to your king if it does not leave you in check.  
    - Each piece has a cost (Pawn=1, Knight=3, Bishop=3, Rook=5, Queen=9).
 
@@ -30,15 +30,42 @@ A custom chess variant in Pygame featuring:
 
 ## Installation
 
-1. **Install Python** (3.7+ recommended).
-2. **Install Pygame**:
+### Option 1: Install from PyPI (Recommended)
+```bash
+pip install chess-builder
+```
+
+### Option 2: Install from Source
+1. **Install Python** (3.7+ recommended)
+2. **Clone the repository**:
    ```bash
-   pip install pygame
+   git clone https://github.com/badgkat/ChessBuilder.git
+   cd ChessBuilder
    ```
-3. **Clone or Download** this repository:
+
+3. **Install dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+### Development Setup
+If you want to contribute or modify the code:
+
+1. **Clone and install dev dependencies**:
    ```bash
    git clone https://github.com/YourUsername/ChessBuilder.git
    cd ChessBuilder
+   pip install -r requirements-dev.txt
+   ```
+
+2. **Install in editable mode**:
+   ```bash
+   pip install -e .
+   ```
+
+3. **Run tests**:
+   ```bash
+   pytest
    ```
 
 ## Running
@@ -46,15 +73,15 @@ A custom chess variant in Pygame featuring:
 Within the project directory, run:
 
 ```bash
-python ChessBuilder.py
+python main.py
 ```
 
-(or `python3 ChessBuilder.py` on some systems)
+(or `python3 main.py` on some systems)
 
 ## Usage
 
 - **Start New Game**  
-  Press *New Game* in the pause menu (hit `Esc`). You may be prompted to select a time control if you’ve enabled the chess clock.
+  Press *New Game* in the pause menu (hit `Esc`). You may be prompted to select a time control if you've enabled the chess clock.
 - **Moving Pieces**  
   Click a piece to see valid moves/captures.  
 - **Collecting Gold**  
@@ -74,8 +101,8 @@ python ChessBuilder.py
 
 ## Chess Clock (Optional)
 
-- At game start, select a time format (e.g. “3|2”) if time control is enabled.
-- Each player’s clock runs only during their turn.
+- At game start, select a time format (e.g. "3|2") if time control is enabled.
+- Each player's clock runs only during their turn.
 - When you end your turn, any increment is added to the side that just moved.
 
 ## Code Organization
@@ -83,7 +110,7 @@ python ChessBuilder.py
 - **`board.py`**: Contains constants for the board (dimensions, colors), plus the `Piece` class, and movement logic.  
 - **`clock.py`** *(optional)*: Implements a chess clock with starting time, increment, and methods for updating.  
 - **`game.py`**: Holds the primary `Game` class, controlling board state, gold mechanics, promotions, overlays, and drawing calls.  
-- **`ChessBuilder.py`**: The main entry point with the game loop (`main()`).
+- **`main.py`**: The main entry point with the game loop (`main()`).
 
 ## To Do
 - General UI beautifying.
