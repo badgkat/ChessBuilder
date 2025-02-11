@@ -2,6 +2,8 @@ import pygame, sys, copy, os
 import board  # <-- We import our new board module
 from clock import ChessClock
 from clock import format_time
+import importlib.resources as pkg_resources
+from . import assets  # assets folder should be a package
 
 class Game:
     def __init__(self, screen):
@@ -121,18 +123,17 @@ class Game:
 
     def load_images(self):
         self.images = {}
-        base = os.path.dirname(os.path.abspath(__file__))
-        assets_dir = os.path.join(base, "assets")
+        # Use package resources instead of direct file paths
         pieces = ['K','Q','R','B','N','P']
         for color in ['white', 'black']:
             for p in pieces:
-                path = os.path.join(assets_dir, f"{color}_{p}.png")
                 try:
-                    img = pygame.image.load(path)
-                    img = pygame.transform.scale(img, (board.SQUARE_SIZE, board.SQUARE_SIZE))
-                    self.images[(color, p)] = img
+                    with pkg_resources.path('src.assets', f"{color}_{p}.png") as path:
+                        img = pygame.image.load(str(path))
+                        img = pygame.transform.scale(img, (board.SQUARE_SIZE, board.SQUARE_SIZE))
+                        self.images[(color, p)] = img
                 except Exception as e:
-                    print(f"Error loading {path}: {e}")
+                    print(f"Error loading {color}_{p}.png: {e}")
 
     def new_game(self):
         self.board = [[None for _ in range(board.BOARD_SIZE)] for _ in range(board.BOARD_SIZE)]

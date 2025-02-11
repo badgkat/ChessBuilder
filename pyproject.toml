@@ -41,10 +41,14 @@ Repository = "https://github.com/badgkat/chessbuilder.git"
 "Bug Tracker" = "https://github.com/badgkat/chessbuilder/issues"
 
 [project.scripts]
-chessbuilder = "chessbuilder.main:main"
+chessbuilder = "src.main:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
+
+[tool.hatch.build.targets.wheel.sources]
+"src" = "src"
+"assets" = "src/assets"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
