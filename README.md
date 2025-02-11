@@ -32,7 +32,7 @@ A custom chess variant in Pygame featuring:
 
 ### Option 1: Install from PyPI (Recommended)
 ```bash
-pip install chess-builder
+pip install chessbuilder
 ```
 
 ### Option 2: Install from Source
