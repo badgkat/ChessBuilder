@@ -1,7 +1,8 @@
 # Chess Builder
 
 A custom chess variant in Pygame featuring:
-- **Gold Collection**: Pawns can accumulate gold when it's your turn and your side is not in check.
+- **Gold Collection**: Pawns can accumulate gold.
+- **Gold Transfer**: Gold may be transfered between friendly pieces with the same logic as captures.
 - **Piece Purchases**: Spend gold to buy and place new pieces near your king.
 - **Promotion Choices**: Pawns can promote with an interactive menu.
 - **Optional Time Controls**: A built-in chess clock for timed games.
@@ -9,8 +10,9 @@ A custom chess variant in Pygame featuring:
 ## Features
 
 1. **Gold Accumulation**  
-   - When it's your turn and you're not in check, click a pawn you've already selected once to collect gold.  
+   - When it's your turn click a pawn you've already selected once to collect gold.  
    - Captured pieces add their accumulated gold to the capturing piece.
+   - To transfer gold click the transfering piece and then click the friendly piece you wish to recieve the gold. The recieving piece must be in a square that the transfering piece could move to. 
 
 2. **Purchases**  
    - Kings can open a purchase overlay by clicking on them again (when it's your turn).  
