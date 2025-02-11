@@ -41,7 +41,7 @@ Repository = "https://github.com/badgkat/chessbuilder.git"
 "Bug Tracker" = "https://github.com/badgkat/chessbuilder/issues"
 
 [project.scripts]
-chess-builder = "chessbuilder.main:main"
+chessbuilder = "chessbuilder.main:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/chess_builder"]
