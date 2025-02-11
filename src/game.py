@@ -160,6 +160,9 @@ class Game:
         self.promotion_color = None
         self.pre_purchase_state = None
         self.pre_promotion_state = None
+        # Reset time control related attributes
+        self.time_control_mode = True
+        self.chess_clock = None
 
     def clear_valid_actions(self):
         self.valid_move_squares = []
@@ -824,6 +827,27 @@ class Game:
                 self.game_over = True
                 self.winner = 'white'
 
+        # Draw everything in one go using draw_board() which already includes all drawing logic
         self.draw_board()
+        
+        # Draw game state overlays
+        if self.game_over:
+            s = pygame.Surface((board.WINDOW_WIDTH, board.WINDOW_HEIGHT))
+            s.set_alpha(128)
+            s.fill((128, 128, 128))
+            self.screen.blit(s, (0, 0))
+            
+            font = pygame.font.Font(None, 74)
+            if self.winner and self.winner != "draw":
+                text = font.render(f"{self.winner} wins!", True, (255, 255, 255))
+            else:
+                text = font.render("Draw!", True, (255, 255, 255))
+            text_rect = text.get_rect(center=(board.WINDOW_WIDTH/2, board.WINDOW_HEIGHT/2))
+            self.screen.blit(text, text_rect)
+        
+        # Draw pause menu last so it's always on top
+        if self.pause_menu:
+            self.draw_pause_menu()
+        
         pygame.display.flip()
         self.clock.tick(30)

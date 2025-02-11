@@ -1,15 +1,9 @@
-import pygame, sys
+import pygame, sys, copy, pyperclip
 from pathlib import Path
-
-# Add parent directory to path when running directly
-if __name__ == "__main__":
-    sys.path.append(str(Path(__file__).parent.parent))
-    from src import board  # Import the module, not a class
-    from src.game import Game
-else:
-    # Use relative imports when running as a package
-    from . import board    # Import the module, not a class
-    from .game import Game
+from . import assets
+from . import board
+from . import game
+from .game import Game
 
 def main():
     pygame.init()
