@@ -1,5 +1,5 @@
 import pytest
-from board import Piece, get_valid_moves, get_visible_squares, in_bounds
+from src.board import Piece, get_valid_moves, get_visible_squares, in_bounds
 
 BOARD_SIZE = 8
 

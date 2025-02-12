@@ -3,9 +3,9 @@ import pygame
 import os
 import sys
 from unittest.mock import patch
-from game import Game
-import board
-from clock import ChessClock
+from src.game import Game
+from src import board
+from src.clock import ChessClock
 
 
 @pytest.fixture(scope="module")

@@ -1,6 +1,6 @@
 import pytest
 import pygame
-from clock import ChessClock, format_time
+from src.clock import ChessClock, format_time
 
 @pytest.fixture
 def chess_clock():

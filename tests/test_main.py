@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import patch, MagicMock
 import pygame
-import main  # main.py containing your main() function
+from src import main
 
 
 @pytest.fixture(scope="module", autouse=True)

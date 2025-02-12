@@ -845,9 +845,5 @@ class Game:
             text_rect = text.get_rect(center=(board.WINDOW_WIDTH/2, board.WINDOW_HEIGHT/2))
             self.screen.blit(text, text_rect)
         
-        # Draw pause menu last so it's always on top
-        if self.pause_menu:
-            self.draw_pause_menu()
-        
         pygame.display.flip()
         self.clock.tick(30)
