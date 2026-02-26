@@ -31,6 +31,7 @@ class Game:
         self.purchase_selected_type = None
         self.valid_purchase_placement = []
         self.purchase_king_color = None
+        self.placement_mode = False
         self.pre_purchase_state = None
 
         self.promotion_mode = False
@@ -1378,14 +1379,6 @@ class Game:
             self.game_over = True
             self.winner = "draw"
             return
-
-        if not self.has_any_legal_moves(self.turn):
-            if self.is_in_check(self.turn):
-                self.game_over = True
-                self.winner = 'black' if self.turn == 'white' else 'white'
-            else:
-                self.game_over = True
-                self.winner = "draw"
 
     def update(self):
         self.screen.fill((0,0,0))
