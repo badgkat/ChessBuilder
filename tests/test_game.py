@@ -216,3 +216,53 @@ def test_draw_by_repetition(game_instance):
 
     assert g.game_over is True
     assert g.winner == "draw"
+
+
+def test_apply_move_standard_move(game_instance):
+    """apply_move with a standard move works correctly."""
+    g = game_instance
+    g.new_game()
+    move = ("move", (6, 4), (5, 4), None)  # White pawn forward
+    g.apply_move(move)
+    assert g.board[5][4] is not None
+    assert g.board[5][4].type == 'P'
+    assert g.board[6][4] is None
+    assert g.turn == 'black'
+
+
+def test_apply_move_promotion(game_instance):
+    """apply_move promotes a pawn reaching the final rank."""
+    g = game_instance
+    g.new_game()
+    g.board[1][4] = None  # Remove black pawn
+    g.board[6][4] = None  # Remove white pawn
+    g.board[1][3] = board.Piece('P', 'white')
+    move = ("move", (1, 3), (0, 3), 'Q')
+    g.apply_move(move)
+    assert g.board[0][3] is not None
+    assert g.board[0][3].type == 'Q'
+    assert g.board[0][3].color == 'white'
+    assert g.turn == 'black'
+
+
+def test_apply_move_promotion_default_queen(game_instance):
+    """apply_move defaults to queen when no promo type specified."""
+    g = game_instance
+    g.new_game()
+    g.board[1][4] = None
+    g.board[6][4] = None
+    g.board[1][3] = board.Piece('P', 'white')
+    move = ("move", (1, 3), (0, 3), None)
+    g.apply_move(move)
+    assert g.board[0][3].type == 'Q'
+
+
+def test_apply_move_capture_transfers_gold(game_instance):
+    """Capturing a piece transfers its gold to the capturer."""
+    g = game_instance
+    g.new_game()
+    g.board[4][4] = board.Piece('P', 'white', gold=3)
+    g.board[3][3] = board.Piece('P', 'black', gold=5)
+    move = ("move", (4, 4), (3, 3), None)
+    g.apply_move(move)
+    assert g.board[3][3].gold == 8  # 3 + 5

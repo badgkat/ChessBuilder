@@ -463,11 +463,56 @@ class Game:
         action_type, src, dst, purchase_type = move
 
         if action_type == "move":
-            # Standard move: if destination is empty, move; if occupied by opponent, capture.
-            if self.board[dst[0]][dst[1]] is None:
-                self.move_piece(src, dst)
+            sr, sc = src
+            dr, dc = dst
+            mover = self.board[sr][sc]
+            target = self.board[dr][dc]
+
+            # En passant capture
+            if mover.type == 'P' and self.en_passant is not None and dst == self.en_passant[0]:
+                captured_pos = self.en_passant[1]
+                self.board[captured_pos[0]][captured_pos[1]] = None
+                self.board[dr][dc] = mover
+                self.board[sr][sc] = None
+                self.move_log.append(f"{mover.type}x{board.square_to_notation(dr, dc)} (e.p.)")
+                self.halfmove_clock = 0
+            elif target is not None:
+                # Capture — transfer gold from captured piece
+                mover.gold += target.gold
+                self.board[dr][dc] = mover
+                self.board[sr][sc] = None
+                self.move_log.append(f"{mover.type}x{board.square_to_notation(dr, dc)}")
+                self.halfmove_clock = 0
             else:
-                self.capture_piece(src, dst)
+                # Normal move
+                self.board[dr][dc] = mover
+                self.board[sr][sc] = None
+                self.move_log.append(f"{mover.type}{board.square_to_notation(dr, dc)}")
+                self.halfmove_clock = 0 if mover.type == 'P' else self.halfmove_clock + 1
+
+            # Promotion check
+            if mover.type == 'P':
+                final_rank = (mover.color == 'white' and dr == 0) or \
+                             (mover.color == 'black' and dr == board.BOARD_SIZE - 1)
+                if final_rank:
+                    promo_type = purchase_type if purchase_type else 'Q'
+                    mover.type = promo_type
+                    self.move_log[-1] += f"={promo_type}"
+                elif abs(sr - dr) == 2:
+                    # Set en passant target for next move
+                    if mover.color == 'white':
+                        self.en_passant = ((sr - 1, sc), (dr, dc))
+                    else:
+                        self.en_passant = ((sr + 1, sc), (dr, dc))
+                else:
+                    self.en_passant = None
+            else:
+                self.en_passant = None
+
+            self.selected_piece_pos = None
+            self.clear_valid_actions()
+            if not simulate:
+                self.end_turn()
 
         elif action_type == "collect_gold":
             if src is not None:
