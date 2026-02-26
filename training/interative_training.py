@@ -20,7 +20,7 @@ def iterative_training(num_iterations=10, games_per_iter=50, epochs_per_iter=5, 
     checkpoint_dir = os.path.dirname(checkpoint_path)
     
     if os.path.exists(checkpoint_path):
-        checkpoint = torch.load(checkpoint_path)
+        checkpoint = torch.load(checkpoint_path, map_location=device)
         model.load_state_dict(checkpoint["model_state_dict"])
         optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         print(f"Loaded model and optimizer from {checkpoint_path}")
@@ -49,7 +49,8 @@ def iterative_training(num_iterations=10, games_per_iter=50, epochs_per_iter=5, 
                 
                 optimizer.zero_grad()
                 policy_pred, value_pred = model(states)
-                loss_policy = torch.nn.functional.mse_loss(policy_pred, policy_targets)
+                log_probs = torch.nn.functional.log_softmax(policy_pred, dim=1)
+                loss_policy = -torch.sum(policy_targets * log_probs) / policy_targets.shape[0]
                 loss_value = torch.nn.functional.mse_loss(value_pred, value_targets)
                 loss = loss_policy + loss_value
                 loss.backward()

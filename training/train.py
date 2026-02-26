@@ -9,7 +9,6 @@ from .dataset import ChessDataset
 
 def train(model, optimizer, dataloader, device, start_epoch, num_epochs, checkpoint_path):
     model.train()
-    loss_fn_policy = torch.nn.MSELoss()
     loss_fn_value = torch.nn.MSELoss()
     
     for epoch in range(start_epoch, num_epochs):
@@ -22,7 +21,9 @@ def train(model, optimizer, dataloader, device, start_epoch, num_epochs, checkpo
             optimizer.zero_grad()
             policy_pred, value_pred = model(states)
             
-            loss_policy = loss_fn_policy(policy_pred, policy_targets)
+            # Cross-entropy loss for policy (soft targets)
+            log_probs = torch.nn.functional.log_softmax(policy_pred, dim=1)
+            loss_policy = -torch.sum(policy_targets * log_probs) / policy_targets.shape[0]
             loss_value = loss_fn_value(value_pred, value_targets)
             loss = loss_policy + loss_value
             
@@ -38,7 +39,7 @@ def train(model, optimizer, dataloader, device, start_epoch, num_epochs, checkpo
         
         # Save checkpoint at the end of each epoch
         torch.save({
-            'epoch': epoch + 1,
+            'iteration': epoch + 1,
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
         }, checkpoint_path)
@@ -48,7 +49,8 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = ChessNet().to(device)
     optimizer = optim.Adam(model.parameters(), lr=0.001)
-    checkpoint_path = "../models/chess_model_checkpoint.pt"
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    checkpoint_path = os.path.join(script_dir, '..', 'models', 'chess_model_checkpoint.pt')
     checkpoint_dir = os.path.dirname(checkpoint_path)
     if not os.path.exists(checkpoint_dir):
         os.makedirs(checkpoint_dir)
@@ -61,7 +63,7 @@ def main():
         checkpoint = torch.load(checkpoint_path, map_location=device)
         model.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        start_epoch = checkpoint['epoch']
+        start_epoch = checkpoint.get('iteration', checkpoint.get('epoch', 0))
         print(f"Resuming training from epoch {start_epoch}")
     
     dataset = ChessDataset()
