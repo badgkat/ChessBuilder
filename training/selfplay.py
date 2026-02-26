@@ -2,7 +2,10 @@
 import sys, os, pygame
 import numpy as np
 import src.board as board
-from src.game import Game  
+from src.game import Game
+
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_DATA_PATH = os.path.join(_SCRIPT_DIR, '..', 'training_data.npz')
 
 # Global counter for games played across multiple calls.
 global_game_counter = 0
@@ -49,10 +52,16 @@ def generate_selfplay_data(num_games=10, model=None, device=None, check_interrup
             else:
                 move = game_instance.get_random_move()
             
+            if move is None:
+                # No legal moves — game should end
+                game_instance.game_over = True
+                game_instance.winner = "draw"
+                break
+
             # Record a training example before applying the move.
             example = game_instance.get_training_example()
             game_examples.append(example)
-            
+
             game_instance.apply_move(move)
             game_instance.update()
             move_count += 1
@@ -86,7 +95,7 @@ def generate_selfplay_data(num_games=10, model=None, device=None, check_interrup
     policy_targets = np.array(policy_targets, dtype=np.float32)
     value_targets = np.array(value_targets, dtype=np.float32).reshape(-1, 1)
     
-    np.savez("training_data.npz", states=states, policy_targets=policy_targets, value_targets=value_targets)
+    np.savez(_DATA_PATH, states=states, policy_targets=policy_targets, value_targets=value_targets)
     print(f"Generated self-play data from {num_games} games. Total games so far: {global_game_counter}.")
 
 if __name__ == "__main__":

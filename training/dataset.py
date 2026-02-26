@@ -5,7 +5,10 @@ import os
 import numpy as np
 
 class ChessDataset(Dataset):
-    def __init__(self, data_file="training_data.npz"):
+    def __init__(self, data_file=None):
+        if data_file is None:
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            data_file = os.path.join(script_dir, '..', 'training_data.npz')
         if os.path.exists(data_file):
             data = np.load(data_file)
             self.states = data['states']           # shape: (N, num_channels, board_size, board_size)
