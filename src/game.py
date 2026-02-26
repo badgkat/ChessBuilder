@@ -1525,18 +1525,72 @@ class Game:
             raise ValueError("Unknown action type")
 
     def get_random_move(self):
-        moves = []
-        for r in range(len(self.board)):
-            for c in range(len(self.board[r])):
+        """Return a random legal action as a 4-tuple (action_type, src, dst, extra)."""
+        legal_actions = []
+
+        # 1. Standard moves (including promotions)
+        for r in range(board.BOARD_SIZE):
+            for c in range(board.BOARD_SIZE):
                 piece = self.board[r][c]
                 if piece and piece.color == self.turn:
-                    legal_moves = board.get_valid_moves(piece, (r, c), self.board, self.en_passant)
-                    for move in legal_moves:
+                    moves = board.get_valid_moves(piece, (r, c), self.board, self.en_passant)
+                    for move in moves:
                         if self.simulate_move_is_safe((r, c), move):
-                            moves.append(((r, c), move))
-        if not moves:
-            print("No legal moves found in get_random_move!")
-        return random.choice(moves) if moves else None
+                            if piece.type == 'P' and self.move_leads_to_promotion(piece, (r, c), move):
+                                for promo in ['Q', 'R', 'B', 'N']:
+                                    legal_actions.append(("move", (r, c), move, promo))
+                            else:
+                                legal_actions.append(("move", (r, c), move, None))
+
+        # 2. Gold collection (pawns, not in check)
+        if not self.is_in_check(self.turn):
+            for r in range(board.BOARD_SIZE):
+                for c in range(board.BOARD_SIZE):
+                    piece = self.board[r][c]
+                    if piece and piece.color == self.turn and piece.type == 'P':
+                        legal_actions.append(("collect_gold", (r, c), None, None))
+
+        # 3. Purchase actions
+        king, king_pos = None, None
+        for r in range(board.BOARD_SIZE):
+            for c in range(board.BOARD_SIZE):
+                piece = self.board[r][c]
+                if piece and piece.color == self.turn and piece.type == 'K':
+                    king, king_pos = piece, (r, c)
+                    break
+            if king_pos:
+                break
+        if king and king.gold > 0:
+            kr, kc = king_pos
+            for dr in [-1, 0, 1]:
+                for dc in [-1, 0, 1]:
+                    if dr == 0 and dc == 0:
+                        continue
+                    nr, nc = kr + dr, kc + dc
+                    if board.in_bounds(nr, nc) and self.board[nr][nc] is None:
+                        for p_type in ['P', 'N', 'B', 'R', 'Q']:
+                            cost = board.PIECE_COST.get(p_type)
+                            if cost and king.gold >= cost:
+                                if p_type == 'P' and (nr == 0 or nr == board.BOARD_SIZE - 1):
+                                    continue
+                                self.board[nr][nc] = board.Piece(p_type, king.color)
+                                if not self.is_in_check(king.color):
+                                    legal_actions.append(("purchase", king_pos, (nr, nc), p_type))
+                                self.board[nr][nc] = None
+
+        # 4. Gold transfers (not in check, piece with gold > 0)
+        if not self.is_in_check(self.turn):
+            for r in range(board.BOARD_SIZE):
+                for c in range(board.BOARD_SIZE):
+                    piece = self.board[r][c]
+                    if piece and piece.color == self.turn and piece.gold > 0:
+                        visible = board.get_visible_squares(piece, (r, c), self.board)
+                        for target in visible:
+                            legal_actions.append(("transfer_gold", (r, c), target, None))
+
+        if not legal_actions:
+            return None
+        return random.choice(legal_actions)
 
     def is_game_over(self):
         return self.game_over

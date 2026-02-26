@@ -318,3 +318,26 @@ def test_sufficient_material_with_rook(game_instance):
     g.board[0][1] = board.Piece('R', 'white')
     g.board[7][7] = board.Piece('K', 'black')
     assert g.has_insufficient_material() is False
+
+
+def test_get_random_move_returns_4_tuple(game_instance):
+    """get_random_move must return a 4-tuple matching apply_move format."""
+    g = game_instance
+    g.new_game()
+    move = g.get_random_move()
+    assert move is not None
+    assert len(move) == 4
+    action_type, src, dst, extra = move
+    assert action_type in ("move", "collect_gold", "purchase", "transfer_gold")
+
+
+def test_get_random_move_includes_gold_collection(game_instance):
+    """get_random_move should include gold collection as a possible action."""
+    g = game_instance
+    action_types = set()
+    for _ in range(200):
+        g.new_game()
+        move = g.get_random_move()
+        if move:
+            action_types.add(move[0])
+    assert "collect_gold" in action_types
