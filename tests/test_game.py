@@ -279,3 +279,42 @@ def test_purchase_adjacency_enforced(game_instance):
     g.apply_move(move)
     assert g.board[0][0] is None  # Should not have placed
     assert g.error_message != ""
+
+
+def test_insufficient_material_king_vs_king(game_instance):
+    g = game_instance
+    g.new_game()
+    g.board = [[None]*8 for _ in range(8)]
+    g.board[0][0] = board.Piece('K', 'white')
+    g.board[7][7] = board.Piece('K', 'black')
+    assert g.has_insufficient_material() is True
+
+
+def test_insufficient_material_king_bishop_vs_king(game_instance):
+    g = game_instance
+    g.new_game()
+    g.board = [[None]*8 for _ in range(8)]
+    g.board[0][0] = board.Piece('K', 'white')
+    g.board[0][1] = board.Piece('B', 'white')
+    g.board[7][7] = board.Piece('K', 'black')
+    assert g.has_insufficient_material() is True
+
+
+def test_sufficient_material_with_gold(game_instance):
+    """Kings with gold can purchase pieces — not insufficient."""
+    g = game_instance
+    g.new_game()
+    g.board = [[None]*8 for _ in range(8)]
+    g.board[0][0] = board.Piece('K', 'white', gold=5)
+    g.board[7][7] = board.Piece('K', 'black')
+    assert g.has_insufficient_material() is False
+
+
+def test_sufficient_material_with_rook(game_instance):
+    g = game_instance
+    g.new_game()
+    g.board = [[None]*8 for _ in range(8)]
+    g.board[0][0] = board.Piece('K', 'white')
+    g.board[0][1] = board.Piece('R', 'white')
+    g.board[7][7] = board.Piece('K', 'black')
+    assert g.has_insufficient_material() is False

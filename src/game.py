@@ -1388,15 +1388,33 @@ class Game:
             for piece in row:
                 if piece is not None:
                     pieces.append(piece)
-        # If only kings remain.
-        if len(pieces) <= 2:
+
+        # Any piece with gold means purchases are possible
+        if any(p.gold > 0 for p in pieces):
+            return False
+
+        # King vs King
+        if len(pieces) == 2:
             return True
-        # King and one minor piece (knight or bishop) is insufficient.
+
+        # King + minor piece vs King
         if len(pieces) == 3:
-            for piece in pieces:
-                if piece.type != "K" and piece.type in ["N", "B"]:
+            non_kings = [p for p in pieces if p.type != 'K']
+            if len(non_kings) == 1 and non_kings[0].type in ['N', 'B']:
+                return True
+
+        # King + Bishop vs King + Bishop (same color square)
+        if len(pieces) == 4:
+            non_kings = [p for p in pieces if p.type != 'K']
+            if len(non_kings) == 2 and all(p.type == 'B' for p in non_kings):
+                bishop_squares = []
+                for r in range(board.BOARD_SIZE):
+                    for c in range(board.BOARD_SIZE):
+                        if self.board[r][c] and self.board[r][c].type == 'B':
+                            bishop_squares.append((r + c) % 2)
+                if len(bishop_squares) == 2 and bishop_squares[0] == bishop_squares[1]:
                     return True
-        # Optionally add more conditions for specific cases.
+
         return False
 
     def end_turn(self):
