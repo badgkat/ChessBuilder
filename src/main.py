@@ -1,4 +1,4 @@
-import pygame, sys, copy, pyperclip, torch
+import pygame, sys, copy, pyperclip, torch, os
 from pathlib import Path
 from . import assets
 from . import board
@@ -15,7 +15,8 @@ def main():
     game_instance = Game(screen)
     # Pre-load AI instance.
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    checkpoint_path = "../models/chess_model_checkpoint.pt"
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    checkpoint_path = os.path.join(script_dir, '..', 'models', 'chess_model_checkpoint.pt')
     ai_instance = AI(checkpoint_path, device)
 
     clock = pygame.time.Clock()

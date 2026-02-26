@@ -1,8 +1,12 @@
-import torch
 import random
-import pygame
-from training.model import ChessNet
-from .game import Game
+import os
+
+try:
+    import torch
+    from training.model import ChessNet
+    HAS_TORCH = True
+except ImportError:
+    HAS_TORCH = False
 
 class AI:
     def __init__(self, checkpoint_path, device):
