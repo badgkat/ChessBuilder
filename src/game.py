@@ -387,30 +387,17 @@ class Game:
     
     def get_training_example(self):
         """
-        Returns a tuple (board_state, policy_target, player) where:
-        - board_state is a numpy array encoding the current board configuration.
-        - policy_target is a 1D numpy array representing a probability distribution over the entire action space.
-        - player is a string ("white" or "black") representing the current player.
-        
-        The action space includes:
-        - Standard moves (4096 indices for an 8x8 board)
-        - 1 index for gold collection
-        - 5 * 64 indices for purchase actions
-        - 4096 indices for gold transfers (from a selected piece to a target square)
+        Returns (board_state, policy_target, player) where policy_target is
+        a uniform distribution over all legal actions in the 8513-dim action space.
         """
-        # Encode the board state (assume your encode_board_state() includes the gold channel)
         board_state = self.encode_board_state()
-        
-        board_size = board.BOARD_SIZE
-        standard_moves = board_size * board_size * board_size * board_size  # 4096
-        purchase_actions = 5 * (board_size * board_size)  # 320
-        transfer_actions = board_size * board_size * board_size * board_size  # 4096
-        total_actions = standard_moves + 1 + purchase_actions + transfer_actions  # standard + collect_gold + purchase + transfer_gold
-        
+        total_actions = 8513
         policy_target = np.zeros(total_actions, dtype=np.float32)
-        legal_actions = []  # Each element is a tuple: (action_type, src, dst, purchase_type)
-        
-        # 1. Legal standard moves.
+        legal_actions = []
+
+        board_size = board.BOARD_SIZE
+
+        # 1. Standard moves (including promotions)
         for r in range(board_size):
             for c in range(board_size):
                 piece = self.board[r][c]
@@ -418,40 +405,66 @@ class Game:
                     moves = board.get_valid_moves(piece, (r, c), self.board, self.en_passant)
                     for move in moves:
                         if self.simulate_move_is_safe((r, c), move):
-                            legal_actions.append(("move", (r, c), move, None))
-                            
-        # 2. Gold collection action.
-        # Add the collect_gold action once per turn (if applicable by your rules).
-        legal_actions.append(("collect_gold", None, None, None))
-        
-        # 3. Purchase actions (if in purchase mode).
-        if self.purchase_mode:
-            king_pos = self.selected_piece_pos  # or another method to determine the king’s position
+                            if piece.type == 'P' and self.move_leads_to_promotion(piece, (r, c), move):
+                                for promo in ['Q', 'R', 'B', 'N']:
+                                    legal_actions.append(("move", (r, c), move, promo))
+                            else:
+                                legal_actions.append(("move", (r, c), move, None))
+
+        # 2. Gold collection (pawns, not in check)
+        if not self.is_in_check(self.turn):
+            for r in range(board_size):
+                for c in range(board_size):
+                    piece = self.board[r][c]
+                    if piece and piece.color == self.turn and piece.type == 'P':
+                        legal_actions.append(("collect_gold", (r, c), None, None))
+
+        # 3. Purchase actions (based on king gold and adjacency)
+        king, king_pos = None, None
+        for r in range(board_size):
+            for c in range(board_size):
+                piece = self.board[r][c]
+                if piece and piece.color == self.turn and piece.type == 'K':
+                    king, king_pos = piece, (r, c)
+                    break
             if king_pos:
-                for r in range(board_size):
-                    for c in range(board_size):
-                        if (r, c) in self.valid_purchase_placement:
-                            for p_type in ['P', 'N', 'B', 'R', 'Q']:
-                                legal_actions.append(("purchase", None, (r, c), p_type))
-                                
-        # 4. Gold transfer actions.
-        # If there's a selected piece with gold > 0, add legal transfers.
-        if self.selected_piece_pos is not None:
-            src = self.selected_piece_pos
-            piece = self.board[src[0]][src[1]]
-            if piece and piece.gold > 0 and self.valid_gold_transfer_squares:
-                for target in self.valid_gold_transfer_squares:
-                    legal_actions.append(("transfer_gold", src, target, None))
-        
-        # Assign uniform probability to each legal action.
+                break
+        if king and king.gold > 0:
+            kr, kc = king_pos
+            for dr in [-1, 0, 1]:
+                for dc in [-1, 0, 1]:
+                    if dr == 0 and dc == 0:
+                        continue
+                    nr, nc = kr + dr, kc + dc
+                    if board.in_bounds(nr, nc) and self.board[nr][nc] is None:
+                        for p_type in ['P', 'N', 'B', 'R', 'Q']:
+                            cost = board.PIECE_COST.get(p_type)
+                            if cost and king.gold >= cost:
+                                if p_type == 'P' and (nr == 0 or nr == board.BOARD_SIZE - 1):
+                                    continue
+                                self.board[nr][nc] = board.Piece(p_type, king.color)
+                                if not self.is_in_check(king.color):
+                                    legal_actions.append(("purchase", king_pos, (nr, nc), p_type))
+                                self.board[nr][nc] = None
+
+        # 4. Gold transfers (not in check, pieces with gold)
+        if not self.is_in_check(self.turn):
+            for r in range(board_size):
+                for c in range(board_size):
+                    piece = self.board[r][c]
+                    if piece and piece.color == self.turn and piece.gold > 0:
+                        visible = board.get_visible_squares(piece, (r, c), self.board)
+                        for target in visible:
+                            legal_actions.append(("transfer_gold", (r, c), target, None))
+
+        # Uniform distribution over legal actions
         if legal_actions:
             probability = 1.0 / len(legal_actions)
             for action in legal_actions:
-                action_type, src, dst, purchase_type = action
-                index = self.move_to_index(action_type, src, dst, purchase_type)
+                action_type, src, dst, pt = action
+                index = self.move_to_index(action_type, src, dst, pt)
                 policy_target[index] = probability
-                
-        # Return the encoded board state, the policy target vector, and the current player's perspective.
+
         return board_state, policy_target, self.turn
 
     def apply_move(self, move, simulate=False):

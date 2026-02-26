@@ -341,3 +341,19 @@ def test_get_random_move_includes_gold_collection(game_instance):
         if move:
             action_types.add(move[0])
     assert "collect_gold" in action_types
+
+
+def test_training_example_only_legal_actions(game_instance):
+    """Policy target should only have nonzero entries for legal actions."""
+    g = game_instance
+    g.new_game()
+    state, policy, player = g.get_training_example()
+    assert state.shape == (13, 8, 8)
+    assert policy.shape == (8513,)
+    assert player == 'white'
+    # Policy should sum to ~1.0 (uniform over legal actions)
+    assert abs(policy.sum() - 1.0) < 1e-5
+    # All nonzero entries should be equal (uniform)
+    nonzero = policy[policy > 0]
+    assert len(nonzero) > 0
+    assert abs(nonzero.max() - nonzero.min()) < 1e-7
