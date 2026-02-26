@@ -1,9 +1,12 @@
-import pygame, sys, copy, os
+import pygame, sys, copy, os, random
+import numpy as np    
 from . import board  # Changed to relative import
 from .clock import ChessClock  # Changed to relative import
 from .clock import format_time  # Changed to relative import
 import importlib.resources as pkg_resources
 from . import assets  # assets folder should be a package
+import torch
+import torch.nn.functional as F
 
 class Game:
     def __init__(self, screen):
@@ -11,7 +14,11 @@ class Game:
         self.clock  = pygame.time.Clock()
         self.font   = pygame.font.SysFont(None, 24)
         self.load_images()
-        self.new_game()
+        
+        self.ai_enabled = False
+        self.ai_color = None
+
+        self.new_game()  
 
         self.selected_piece_pos = None
         self.valid_move_squares = []
@@ -35,6 +42,7 @@ class Game:
 
         self.pause_menu = False
         self.pause_menu_options = []
+        self.show_ai_submenu = False
 
         self.game_over = False
         self.winner = None
@@ -49,57 +57,479 @@ class Game:
         self.time_control_options = []
         self.time_control_overlay_rect = None
         self.chess_clock = None
-        self.create_time_control_options()
 
-    def create_time_control_options(self):
-        """Create dynamically sized time control overlay."""
+        self.max_moves_reached = False  # Initialize flag here
+
+    def create_time_control_submenu_options(self):
         margin = 10
-        btn_h = 30
+        btn_h = 40
         btn_spacing = 5
-        
-        # Calculate required height and width based on number of options
-        choices = [
-            ('1 min', 60, 60, 0),
-            ('3|2', 180, 180, 2),
-            ('5 min', 300, 300, 0),
-            ('10 min', 600, 600, 0),
-            ('15|10', 900, 900, 10),
+        # Time control options including a "None" option.
+        options = [
+            ('None', 'none'),
+            ('1 min', '1min'),
+            ('3|2', '3|2'),
+            ('5 min', '5min'),
+            ('10 min', '10min'),
+            ('15|10', '15|10')
         ]
         
-        # Calculate minimum width needed for text
-        text_surfaces = [self.font.render(label, True, (0,0,0)) for label, *_ in choices]
+        text_surfaces = [self.font.render(label, True, (0,0,0)) for label, _ in options]
         min_btn_width = max(surf.get_width() for surf in text_surfaces) + margin * 4
-        btn_w = max(200, min_btn_width)  # minimum width of 200px
+        btn_w = max(200, min_btn_width)
         
         overlay_w = btn_w + margin * 2
-        overlay_h = (btn_h * len(choices)) + (btn_spacing * (len(choices) - 1)) + margin * 2
+        overlay_h = (btn_h * len(options)) + (btn_spacing * (len(options) - 1)) + margin * 2
         
-        # Center the overlay on screen
         ox = (board.WINDOW_WIDTH - overlay_w) // 2
         oy = (board.WINDOW_HEIGHT - overlay_h) // 2
         
         self.time_control_overlay_rect = pygame.Rect(ox, oy, overlay_w, overlay_h)
         
-        # Create buttons
         y_cursor = oy + margin
         self.time_control_options = []
-        for label, wtime, btime, inc in choices:
+        # For each option, we store the action string and the corresponding time parameters.
+        # Adjust the time parameters as needed.
+        for label, action in options:
+            if action == 'none':
+                # "None" option: no time control.
+                time_params = (None, None, None)
+            elif action == '1min':
+                time_params = (60, 60, 0)
+            elif action == '3|2':
+                time_params = (180, 180, 2)
+            elif action == '5min':
+                time_params = (300, 300, 0)
+            elif action == '10min':
+                time_params = (600, 600, 0)
+            elif action == '15|10':
+                time_params = (900, 900, 10)
             rect = pygame.Rect(ox + margin, y_cursor, btn_w, btn_h)
-            self.time_control_options.append((rect, label, wtime, btime, inc))
+            self.time_control_options.append((rect, label, *time_params))
             y_cursor += btn_h + btn_spacing
 
-    def draw_time_control_overlay(self):
-        """Draw the time control overlay with clickable options."""
-        if not self.time_control_mode or not self.time_control_overlay_rect:
-            return
-        pygame.draw.rect(self.screen, (220,220,220), self.time_control_overlay_rect)
-        pygame.draw.rect(self.screen, (0,0,0), self.time_control_overlay_rect, 2)
+    def get_model_move(self, model, device, temperature=1.0, use_dirichlet=False, epsilon=0.25, alpha=0.3, sample=False):
+        """
+        Selects a move using the model with adjustable exploration.
+        ...
+        """
+        # 1. Encode board state and get model prediction.
+        board_state = self.encode_board_state()  # Shape: (num_channels, BOARD_SIZE, BOARD_SIZE)
+        state_tensor = torch.tensor(board_state).unsqueeze(0).to(device)
+        
+        model.eval()
+        with torch.no_grad():
+            # Assuming model outputs logits for the policy.
+            logits, _ = model(state_tensor)
+        logits = logits.squeeze(0)
+        
+        # Apply temperature scaling.
+        scaled_logits = logits / temperature
+        probs = F.softmax(scaled_logits, dim=-1)
+        
+        # Optionally add Dirichlet noise.
+        if use_dirichlet:
+            noise = np.random.dirichlet([alpha] * probs.shape[-1])
+            noise_tensor = torch.tensor(noise, dtype=torch.float32, device=device)
+            probs = (1 - epsilon) * probs + epsilon * noise_tensor
 
-        for rect, label, _, _, _ in self.time_control_options:
-            pygame.draw.rect(self.screen, (150,150,150), rect)
-            txt_surf = self.font.render(label, True, (0,0,0))
-            self.screen.blit(txt_surf, txt_surf.get_rect(center=rect.center))
+        # 2. Build the list of legal actions.
+        board_size = board.BOARD_SIZE
+        legal_actions = []
+        
+        # a. Standard moves (including captures and promotions).
+        for r in range(board_size):
+            for c in range(board_size):
+                piece = self.board[r][c]
+                if piece and piece.color == self.turn:
+                    moves = board.get_valid_moves(piece, (r, c), self.board, self.en_passant)
+                    for move in moves:
+                        candidate = ("move", (r, c), move, None)
+                        if self.is_move_legal(candidate):
+                            if piece.type == 'P' and self.move_leads_to_promotion(piece, (r, c), move):
+                                for promo in ['Q', 'R', 'B', 'N']:
+                                    candidate_promo = ("move", (r, c), move, promo)
+                                    if self.is_move_legal(candidate_promo):
+                                        legal_actions.append(candidate_promo)
+                            else:
+                                legal_actions.append(candidate)
+        
+        # b. Gold collection actions.
+        for r in range(board_size):
+            for c in range(board_size):
+                piece = self.board[r][c]
+                if piece and piece.color == self.turn and piece.type == 'P':
+                    candidate = ("collect_gold", (r, c), None, None)
+                    if self.is_move_legal(candidate):
+                        legal_actions.append(candidate)
+        
+        # c. Purchase actions.
+        king, king_pos = None, None
+        for r in range(board_size):
+            for c in range(board_size):
+                piece = self.board[r][c]
+                if piece and piece.color == self.turn and piece.type == 'K':
+                    king, king_pos = piece, (r, c)
+                    break
+            if king_pos:
+                break
+        if king and king.gold > 0:
+            r, c = king_pos
+            adjacent = []
+            for dr in [-1, 0, 1]:
+                for dc in [-1, 0, 1]:
+                    if dr == 0 and dc == 0:
+                        continue
+                    nr, nc = r + dr, c + dc
+                    if board.in_bounds(nr, nc) and self.board[nr][nc] is None:
+                        adjacent.append((nr, nc))
+            purchase_squares = [sq for sq in adjacent if self.board[sq[0]][sq[1]] is None]
+            for candidate_square in purchase_squares:
+                for p_type in ['P', 'N', 'B', 'R', 'Q']:
+                    cost = board.PIECE_COST.get(p_type)
+                    candidate = ("purchase", king_pos, candidate_square, p_type)
+                    if cost is not None and king.gold >= cost and self.is_move_legal(candidate):
+                        legal_actions.append(candidate)
+        
+        # d. Transfer gold actions.
+        # For each friendly piece with gold, allow transferring its entire gold to another friendly piece
+        # that is on a square visible from the source piece.
+        for r in range(board_size):
+            for c in range(board_size):
+                piece = self.board[r][c]
+                if piece and piece.color == self.turn and piece.gold > 0:
+                    # Get squares that this piece can "see".
+                    visible_squares = board.get_visible_squares(piece, (r, c), self.board)
+                    for target in visible_squares:
+                        tr, tc = target
+                        target_piece = self.board[tr][tc]
+                        # Only allow transfer if the target square has a friendly piece.
+                        if target_piece and target_piece.color == self.turn:
+                            candidate = ("transfer_gold", (r, c), (tr, tc), None)
+                            if self.is_move_legal(candidate):
+                                legal_actions.append(candidate)
+        
+        # 3. Map each legal action to its corresponding index.
+        action_indices = []
+        for action in legal_actions:
+            action_type, src, dst, purchase_type = action
+            try:
+                idx = self.move_to_index(action_type, src, dst, purchase_type)
+                action_indices.append((idx, action))
+            except Exception as e:
+                # Skip any problematic action.
+                pass
+            #print(action_indices) #debug print to make sure the ai sees correct avilable moves           
+        if not action_indices:
+            # Fallback: if no legal actions, return a random move.
+            return self.get_random_move()
+        
+        # 4. Create lists for legal indices and actions.
+        legal_idx_list = [idx for idx, action in action_indices]
+        legal_actions_list = [action for idx, action in action_indices]
+        
+        # Extract the probabilities for legal moves.
+        policy_probs = probs.cpu().numpy()
+        legal_probs = policy_probs[legal_idx_list]
+        
+        # If sampling is requested, sample based on the legal probabilities.
+        if sample:
+            sum_prob = legal_probs.sum()
+            if sum_prob > 0:
+                normalized_probs = legal_probs / sum_prob
+                chosen_idx = np.random.choice(len(legal_actions_list), p=normalized_probs)
+                chosen_action = legal_actions_list[chosen_idx]
+            else:
+                # Fallback to best move if probabilities sum to zero.
+                chosen_action = legal_actions_list[np.argmax(legal_probs)]
+        else:
+            # Deterministic: select the action with the highest probability.
+            chosen_action = legal_actions_list[np.argmax(legal_probs)]
+        
+        return chosen_action
 
+    def is_move_legal(self, move):
+        """
+        Returns True if applying the move does not leave the king in check.
+        Uses a simulation on a copied minimal game state.
+        """
+        simulated_game = self.copy_for_simulation()
+        try:
+            simulated_game.apply_move(move, simulate=True)
+        except Exception as e:
+            print("Simulation error:", e)
+            return False
+        return not simulated_game.is_in_check(self.turn, custom_board=simulated_game.board)
+
+    def move_leads_to_promotion(self, piece, src, dst):
+        """
+        Determines if moving a pawn from src to dst leads to promotion.
+        Assumes standard chess rules: white promotes on row 0, black on the last row.
+        """
+        if piece.type != 'P':
+            return False
+        promotion_row = 0 if piece.color == 'white' else board.BOARD_SIZE - 1
+        return dst[0] == promotion_row
+    
+    def copy_for_simulation(self):
+        """
+        Returns a copy of the game state for simulation.
+        Only copies picklable attributes needed for move validation.
+        Non-picklable attributes (like screen, clock, and pygame.Rect objects) are omitted.
+        """
+        sim = Game.__new__(Game)  # create a new instance without calling __init__
+    
+        # Essential game state:
+        sim.board = copy.deepcopy(self.board)
+        sim.turn = self.turn
+        sim.en_passant = self.en_passant
+        
+        # Purchase-related state:
+        sim.purchase_mode = self.purchase_mode
+        sim.purchase_options = copy.deepcopy(self.purchase_options)
+        sim.purchase_selected_type = self.purchase_selected_type
+        sim.valid_purchase_placement = copy.deepcopy(self.valid_purchase_placement)
+        sim.purchase_king_color = self.purchase_king_color
+        sim.pre_purchase_state = copy.deepcopy(self.pre_purchase_state)
+        
+        # Promotion-related state:
+        sim.promotion_mode = self.promotion_mode
+        sim.promotion_options = copy.deepcopy(self.promotion_options)
+        sim.promotion_pos = self.promotion_pos
+        sim.promotion_color = self.promotion_color
+        sim.pre_promotion_state = copy.deepcopy(self.pre_promotion_state)
+        
+        # Pause/menu state:
+        sim.pause_menu = self.pause_menu
+        sim.pause_menu_options = copy.deepcopy(self.pause_menu_options)
+        sim.show_ai_submenu = self.show_ai_submenu
+        
+        # Game outcome and logging:
+        sim.game_over = self.game_over
+        sim.winner = self.winner
+        sim.move_log = self.move_log[:]  # shallow copy works for list of strings
+        sim.error_message = self.error_message
+        sim.move_log_scroll = self.move_log_scroll
+        sim.position_history = copy.deepcopy(self.position_history)
+        
+        # Move validation helpers:
+        sim.valid_move_squares = copy.deepcopy(self.valid_move_squares)
+        sim.valid_capture_squares = copy.deepcopy(self.valid_capture_squares)
+        sim.valid_gold_transfer_squares = copy.deepcopy(self.valid_gold_transfer_squares)
+        sim.halfmove_clock = self.halfmove_clock
+        
+        # Time control (excluding non-picklable overlays/chess_clock)
+        sim.time_control_mode = self.time_control_mode
+        sim.time_control_options = copy.deepcopy(self.time_control_options)
+        sim.chess_clock = None  # Set chess_clock to a default (None) for simulation.
+        
+        # AI related state:
+        sim.ai_enabled = self.ai_enabled
+        sim.ai_color = self.ai_color
+        sim.selected_piece_pos = self.selected_piece_pos
+        
+        # Exclude non-picklable objects:
+        # sim.screen, sim.clock, sim.font, sim.purchase_overlay_rect, sim.promotion_overlay_rect,
+        # and sim.time_control_overlay_rect are omitted.
+        
+        return sim
+
+    def encode_board_state(self):
+        """
+        Encodes the current board state into a numpy array of shape 
+        (13, BOARD_SIZE, BOARD_SIZE).
+        
+        Channels 0-5: Presence of white pieces:
+            0: White King, 1: White Queen, 2: White Rook, 
+            3: White Bishop, 4: White Knight, 5: White Pawn.
+        Channels 6-11: Presence of black pieces:
+            6: Black King, 7: Black Queen, 8: Black Rook, 
+            9: Black Bishop, 10: Black Knight, 11: Black Pawn.
+        Channel 12: Gold amount on each square (raw value, or normalized if preferred).
+        """
+        board_size = board.BOARD_SIZE
+        # Create a tensor for piece presence (12 channels)
+        piece_tensor = np.zeros((12, board_size, board_size), dtype=np.float32)
+        # Create a separate tensor for gold values (1 channel)
+        gold_tensor = np.zeros((1, board_size, board_size), dtype=np.float32)
+        
+        # Mapping from (color, piece type) to channel index
+        piece_to_channel = {
+            ('white', 'K'): 0,
+            ('white', 'Q'): 1,
+            ('white', 'R'): 2,
+            ('white', 'B'): 3,
+            ('white', 'N'): 4,
+            ('white', 'P'): 5,
+            ('black', 'K'): 6,
+            ('black', 'Q'): 7,
+            ('black', 'R'): 8,
+            ('black', 'B'): 9,
+            ('black', 'N'): 10,
+            ('black', 'P'): 11,
+        }
+        
+        for r in range(board_size):
+            for c in range(board_size):
+                piece = self.board[r][c]
+                if piece:
+                    key = (piece.color, piece.type)
+                    channel = piece_to_channel.get(key)
+                    if channel is not None:
+                        piece_tensor[channel, r, c] = 1.0
+                    # Assume that piece.gold holds the gold value (you can normalize if needed)
+                    gold_tensor[0, r, c] = piece.gold
+                    
+        # Concatenate the piece tensor and gold tensor along the channel axis
+        encoded_state = np.concatenate([piece_tensor, gold_tensor], axis=0)
+        return encoded_state
+    
+    def get_training_example(self):
+        """
+        Returns a tuple (board_state, policy_target, player) where:
+        - board_state is a numpy array encoding the current board configuration.
+        - policy_target is a 1D numpy array representing a probability distribution over the entire action space.
+        - player is a string ("white" or "black") representing the current player.
+        
+        The action space includes:
+        - Standard moves (4096 indices for an 8x8 board)
+        - 1 index for gold collection
+        - 5 * 64 indices for purchase actions
+        - 4096 indices for gold transfers (from a selected piece to a target square)
+        """
+        # Encode the board state (assume your encode_board_state() includes the gold channel)
+        board_state = self.encode_board_state()
+        
+        board_size = board.BOARD_SIZE
+        standard_moves = board_size * board_size * board_size * board_size  # 4096
+        purchase_actions = 5 * (board_size * board_size)  # 320
+        transfer_actions = board_size * board_size * board_size * board_size  # 4096
+        total_actions = standard_moves + 1 + purchase_actions + transfer_actions  # standard + collect_gold + purchase + transfer_gold
+        
+        policy_target = np.zeros(total_actions, dtype=np.float32)
+        legal_actions = []  # Each element is a tuple: (action_type, src, dst, purchase_type)
+        
+        # 1. Legal standard moves.
+        for r in range(board_size):
+            for c in range(board_size):
+                piece = self.board[r][c]
+                if piece and piece.color == self.turn:
+                    moves = board.get_valid_moves(piece, (r, c), self.board, self.en_passant)
+                    for move in moves:
+                        if self.simulate_move_is_safe((r, c), move):
+                            legal_actions.append(("move", (r, c), move, None))
+                            
+        # 2. Gold collection action.
+        # Add the collect_gold action once per turn (if applicable by your rules).
+        legal_actions.append(("collect_gold", None, None, None))
+        
+        # 3. Purchase actions (if in purchase mode).
+        if self.purchase_mode:
+            king_pos = self.selected_piece_pos  # or another method to determine the king’s position
+            if king_pos:
+                for r in range(board_size):
+                    for c in range(board_size):
+                        if (r, c) in self.valid_purchase_placement:
+                            for p_type in ['P', 'N', 'B', 'R', 'Q']:
+                                legal_actions.append(("purchase", None, (r, c), p_type))
+                                
+        # 4. Gold transfer actions.
+        # If there's a selected piece with gold > 0, add legal transfers.
+        if self.selected_piece_pos is not None:
+            src = self.selected_piece_pos
+            piece = self.board[src[0]][src[1]]
+            if piece and piece.gold > 0 and self.valid_gold_transfer_squares:
+                for target in self.valid_gold_transfer_squares:
+                    legal_actions.append(("transfer_gold", src, target, None))
+        
+        # Assign uniform probability to each legal action.
+        if legal_actions:
+            probability = 1.0 / len(legal_actions)
+            for action in legal_actions:
+                action_type, src, dst, purchase_type = action
+                index = self.move_to_index(action_type, src, dst, purchase_type)
+                policy_target[index] = probability
+                
+        # Return the encoded board state, the policy target vector, and the current player's perspective.
+        return board_state, policy_target, self.turn
+
+    def apply_move(self, move, simulate=False):
+        """
+        Applies a move according to its action type.
+        If simulate=True, the move is applied on the board but doesn't
+        call end_turn() or update logs, so you can use it to validate moves.
+        """
+        action_type, src, dst, purchase_type = move
+
+        if action_type == "move":
+            # Standard move: if destination is empty, move; if occupied by opponent, capture.
+            if self.board[dst[0]][dst[1]] is None:
+                self.move_piece(src, dst)
+            else:
+                self.capture_piece(src, dst)
+
+        elif action_type == "collect_gold":
+            if src is not None:
+                piece = self.board[src[0]][src[1]]
+                if piece:
+                    piece.gold += 1
+                    self.move_log.append(f"{piece.type}+{board.square_to_notation(src[0], src[1])} (gold collected)")
+                    self.halfmove_clock = 0
+                else:
+                    self.error_message = "No piece found to collect gold."
+            else:
+                self.error_message = "Invalid source for gold collection."
+            if not simulate:
+                self.end_turn()
+                #print("turn ended now ", self.turn, "'s turn")
+        elif action_type == "purchase":
+            # Get the current king.
+            king_pos, king = None, None
+            for r in range(board.BOARD_SIZE):
+                for c in range(board.BOARD_SIZE):
+                    piece = self.board[r][c]
+                    if piece and piece.color == self.turn and piece.type == 'K':
+                        king_pos, king = (r, c), piece
+                        break
+                if king_pos:
+                    break
+
+            if not king:
+                self.error_message = "No king available for purchase action."
+            else:
+                cost = board.PIECE_COST.get(purchase_type)
+                if cost is None:
+                    self.error_message = "Invalid purchase type."
+                elif king.gold < cost:
+                    self.error_message = "Not enough gold for purchase."
+                else:
+                    self.purchase_piece(dst, purchase_type)
+                    self.move_log.append(f"${purchase_type}{board.square_to_notation(dst[0], dst[1])}")
+                    king.gold -= cost
+                    self.halfmove_clock += 1
+
+            if not simulate:
+                self.end_turn()
+                #print("turn ended now ", self.turn, "'s turn")
+
+        elif action_type == "transfer_gold":
+            if src is not None:
+                src_piece = self.board[src[0]][src[1]]
+                target_piece = self.board[dst[0]][dst[1]]
+                if src_piece and target_piece:
+                    target_piece.gold += src_piece.gold
+                    self.move_log.append(f"{src_piece.type}G{board.square_to_notation(dst[0], dst[1])}")
+                    src_piece.gold = 0
+                    self.halfmove_clock += 1
+                else:
+                    self.error_message = "Invalid source or target for gold transfer."
+            else:
+                self.error_message = "No source provided for gold transfer."
+            if not simulate:
+                self.end_turn()
+                #print("turn ended now ", self.turn, "'s turn")
+        else:
+            raise ValueError(f"Unknown action type: {action_type}")
 
     def to_display_coords(self, r, c):
         if self.turn == 'white':
@@ -141,6 +571,8 @@ class Game:
         self.board[6][4] = board.Piece('P', 'white')
         self.board[0][4] = board.Piece('K', 'black')
         self.board[1][4] = board.Piece('P', 'black')
+        
+        # White always moves first.
         self.turn = 'white'
         self.selected_piece_pos = None
         self.clear_valid_actions()
@@ -160,9 +592,16 @@ class Game:
         self.promotion_color = None
         self.pre_purchase_state = None
         self.pre_promotion_state = None
-        # Reset time control related attributes
-        self.time_control_mode = True
-        self.chess_clock = None
+        self.max_moves_reached = False  
+        # Integrate AI settings (set via the pause menu AI submenu)
+        # Expect that, if AI is enabled, self.ai_enabled and self.ai_color have been set.
+        if hasattr(self, 'ai_enabled') and self.ai_enabled:
+            # Ensure ai_color is valid; default to black if missing.
+            if not hasattr(self, 'ai_color') or self.ai_color not in ['white', 'black']:
+                self.ai_color = 'black'
+            #print(f"New game started: AI enabled. AI plays as {self.ai_color}.")
+        #else:
+            #print("New game started: Human vs Human.")
 
     def clear_valid_actions(self):
         self.valid_move_squares = []
@@ -260,7 +699,18 @@ class Game:
             transfers = board.get_visible_squares(p, (row, col), self.board)
             self.valid_gold_transfer_squares = transfers
 
+    def purchase_piece(self, dst, purchase_type):
+        """
+        Places a new piece of the given purchase_type on the board at the destination (dst).
+        Assumes that the destination is a valid empty square.
+        """
+        r, c = dst
+        # Create a new piece with the same color as the current turn (i.e., the king's color).
+        new_piece = board.Piece(purchase_type, self.turn)
+        self.board[r][c] = new_piece
+
     def move_piece(self, src, dst):
+        orig_pos = self.selected_piece_pos
         sr, sc = src
         dr, dc = dst
         mover = self.board[sr][sc]
@@ -318,6 +768,7 @@ class Game:
         self.selected_piece_pos = None
         self.clear_valid_actions()
         self.end_turn()
+        #print("turn ended now ", self.turn, "'s turn")
 
     def capture_piece(self, src, dst):
         sr, sc = src
@@ -335,6 +786,7 @@ class Game:
         self.clear_valid_actions()
         self.en_passant = None
         self.end_turn()
+        #print("tun ended now ", self.turn, "'s turn")
 
     def create_purchase_options(self, row, col):
         """Create dynamically sized purchase overlay."""
@@ -403,22 +855,20 @@ class Game:
             x_cursor += btn_size + btn_spacing
 
     def create_pause_menu_options(self):
-        """Create dynamically sized pause menu overlay."""
         margin = 10
         btn_h = 40
         btn_spacing = 5
-        
+        # Main pause menu: New Game and Quit.
         options = [('New Game', 'new_game'), ('Quit', 'quit')]
         
-        # Calculate minimum width needed for text
-        text_surfaces = [self.font.render(label, True, (0,0,0)) for label, _ in options]
+        # Calculate minimum button width.
+        text_surfaces = [self.font.render(label, True, (0, 0, 0)) for label, _ in options]
         min_btn_width = max(surf.get_width() for surf in text_surfaces) + margin * 4
-        btn_w = max(200, min_btn_width)  # minimum width of 200px
+        btn_w = max(200, min_btn_width)
         
         overlay_w = btn_w + margin * 2
         overlay_h = (btn_h * len(options)) + (btn_spacing * (len(options) - 1)) + margin * 2
         
-        # Center on screen
         ox = (board.WINDOW_WIDTH - overlay_w) // 2
         oy = (board.WINDOW_HEIGHT - overlay_h) // 2
         
@@ -431,6 +881,37 @@ class Game:
             self.pause_menu_options.append((rect, action, label))
             y_cursor += btn_h + btn_spacing
 
+    def create_new_game_options(self):
+        margin = 10
+        btn_h = 40
+        btn_spacing = 5
+        # New Game options: local hotseat and AI options.
+        options = [
+            ('Local Hotseat', 'hotseat'),
+            ('Play as White', 'ai_black'),
+            ('Play as Black', 'ai_white'),
+            ('Random (AI)', 'ai_random')
+        ]
+        
+        text_surfaces = [self.font.render(label, True, (0, 0, 0)) for label, _ in options]
+        min_btn_width = max(surf.get_width() for surf in text_surfaces) + margin * 4
+        btn_w = max(200, min_btn_width)
+        
+        overlay_w = btn_w + margin * 2
+        overlay_h = (btn_h * len(options)) + (btn_spacing * (len(options) - 1)) + margin * 2
+        
+        ox = (board.WINDOW_WIDTH - overlay_w) // 2
+        oy = (board.WINDOW_HEIGHT - overlay_h) // 2
+        
+        self.new_game_overlay_rect = pygame.Rect(ox, oy, overlay_w, overlay_h)
+        
+        y_cursor = oy + margin
+        self.new_game_options = []
+        for label, action in options:
+            rect = pygame.Rect(ox + margin, y_cursor, btn_w, btn_h)
+            self.new_game_options.append((rect, action, label))
+            y_cursor += btn_h + btn_spacing
+    
     def toggle_pause_menu(self):
         self.pause_menu = not self.pause_menu
         if self.pause_menu:
@@ -449,13 +930,13 @@ class Game:
                 color = board.WHITE_SQ if (r + c) % 2 == 0 else board.DARK_SQ
                 pygame.draw.rect(self.screen, color, rect)
 
-                # highlight selection
+                # Highlight selection.
                 if self.selected_piece_pos == (r, c):
                     select_overlay = pygame.Surface((board.SQUARE_SIZE, board.SQUARE_SIZE), pygame.SRCALPHA)
                     select_overlay.fill(board.SELECT_HIGHLIGHT_COLOR)
                     self.screen.blit(select_overlay, (rect_x, rect_y))
 
-                # highlight valid moves, captures, gold transfers
+                # Highlight valid moves, captures, gold transfers.
                 if (r, c) in self.valid_move_squares:
                     pygame.draw.rect(self.screen, board.BLUE, rect, 3)
                 if (r, c) in self.valid_capture_squares:
@@ -469,7 +950,7 @@ class Game:
                     if img:
                         self.screen.blit(img, rect)
                     if piece.gold > 0:
-                        # draw gold circle
+                        # Draw gold circle.
                         center_x = rect_x + board.SQUARE_SIZE - 15
                         center_y = rect_y + 15
                         radius = 12
@@ -485,7 +966,7 @@ class Game:
         rank_rect = pygame.Rect(0, board.BOARD_HEIGHT, board.BOARD_WIDTH + board.MARGIN_LEFT, board.MARGIN_BOTTOM)
         pygame.draw.rect(self.screen, board.NOTATION_PANEL_COLOR, rank_rect)
 
-        # file labels
+        # File labels.
         for c in range(board.BOARD_SIZE):
             label = self.get_file_label(c)
             t_surf = self.font.render(label, True, (0, 0, 0))
@@ -494,7 +975,7 @@ class Game:
             t_rect.centery = board_y + board.BOARD_HEIGHT + (board.MARGIN_BOTTOM // 2)
             self.screen.blit(t_surf, t_rect)
 
-        # rank labels
+        # Rank labels.
         for r in range(board.BOARD_SIZE):
             label = self.get_rank_label(r)
             t_surf = self.font.render(label, True, (0, 0, 0))
@@ -525,7 +1006,7 @@ class Game:
             err_txt = self.font.render(self.error_message, True, (255, 0, 0))
             self.screen.blit(err_txt, (10, board.BOARD_HEIGHT + board.MARGIN_BOTTOM + 34))
 
-        # Purchase overlay
+        # Purchase overlay.
         if self.purchase_mode and self.purchase_overlay_rect:
             pygame.draw.rect(self.screen, (200, 200, 200), self.purchase_overlay_rect)
             pygame.draw.rect(self.screen, (0, 0, 0), self.purchase_overlay_rect, 2)
@@ -540,7 +1021,7 @@ class Game:
                 cost_txt = self.font.render(cost_str, True, (255, 215, 0))
                 self.screen.blit(cost_txt, (rect_.x+2, rect_.y+2))
 
-        # Promotion overlay
+        # Promotion overlay.
         if self.promotion_mode and self.promotion_overlay_rect:
             pygame.draw.rect(self.screen, (200, 200, 200), self.promotion_overlay_rect)
             pygame.draw.rect(self.screen, (0, 0, 0), self.promotion_overlay_rect, 2)
@@ -552,7 +1033,7 @@ class Game:
                         small_icon = pygame.transform.scale(icon, (rect_.width, rect_.height))
                         self.screen.blit(small_icon, rect_)
 
-        # Pause menu
+        # Pause menu.
         if self.pause_menu:
             pygame.draw.rect(self.screen, (180, 180, 180), self.pause_overlay_rect)
             pygame.draw.rect(self.screen, (0, 0, 0), self.pause_overlay_rect, 2)
@@ -560,52 +1041,52 @@ class Game:
                 pygame.draw.rect(self.screen, (150, 150, 150), rect_)
                 ts = self.font.render(label, True, (0, 0, 0))
                 self.screen.blit(ts, ts.get_rect(center=rect_.center))
+        if self.pause_menu:
+                # Draw New Game submenu overlay if active.
+                if hasattr(self, 'new_game_overlay_rect') and self.new_game_overlay_rect:
+                    pygame.draw.rect(self.screen, (180, 180, 180), self.new_game_overlay_rect)
+                    pygame.draw.rect(self.screen, (0, 0, 0), self.new_game_overlay_rect, 2)
+                    for rect, action, label in self.new_game_options:
+                        pygame.draw.rect(self.screen, (150,150,150), rect)
+                        ts = self.font.render(label, True, (0, 0, 0))
+                        self.screen.blit(ts, ts.get_rect(center=rect.center))
+                # Else if the Time Control submenu is active, draw that.
+                elif hasattr(self, 'time_control_overlay_rect') and self.time_control_overlay_rect:
+                    pygame.draw.rect(self.screen, (180, 180, 180), self.time_control_overlay_rect)
+                    pygame.draw.rect(self.screen, (0, 0, 0), self.time_control_overlay_rect, 2)
+                    for rect, label, wsecs, bsecs, inc in self.time_control_options:
+                        pygame.draw.rect(self.screen, (150,150,150), rect)
+                        ts = self.font.render(label, True, (0, 0, 0))
+                        self.screen.blit(ts, ts.get_rect(center=rect.center))
+                # Otherwise, draw the main pause menu.
+                else:
+                    pygame.draw.rect(self.screen, (220,220,220), self.pause_overlay_rect)
+                    pygame.draw.rect(self.screen, (0, 0, 0), self.pause_overlay_rect, 2)
+                    for rect, action, label in self.pause_menu_options:
+                        pygame.draw.rect(self.screen, (200,200,200), rect)
+                        ts = self.font.render(label, True, (0, 0, 0))
+                        self.screen.blit(ts, ts.get_rect(center=rect.center))
 
-        # Game Over overlay
-        if self.game_over:
-            overlay = pygame.Surface((board.WINDOW_WIDTH, board.WINDOW_HEIGHT))
-            overlay.set_alpha(200)
-            overlay.fill((50, 50, 50))
-            self.screen.blit(overlay, (0, 0))
-            text = f"Game Over: {self.winner} wins!" if self.winner != "draw" else "Game Over: Draw"
-            ts = self.font.render(text, True, (255, 255, 255))
-            self.screen.blit(ts, ts.get_rect(center=(board.WINDOW_WIDTH // 2, board.WINDOW_HEIGHT // 2)))
-
+        # Draw turn and time info.
         if self.chess_clock:
-                white_str = format_time(self.chess_clock.white_time)
-                black_str = format_time(self.chess_clock.black_time)
-                turn_display = f"Turn: {self.turn} | White: {white_str}  Black: {black_str}"
+            white_str = format_time(self.chess_clock.white_time)
+            black_str = format_time(self.chess_clock.black_time)
+            turn_display = f"Turn: {self.turn} | White: {white_str}  Black: {black_str}"
         else:
-
-                turn_display = f"Turn: {self.turn}"
-
+            # Display default clock values or a prompt that time control is not active.
+            turn_display = f"Turn: {self.turn} | Clock: N/A"
         turn_txt = self.font.render(turn_display, True, (0, 0, 0))
         self.screen.blit(turn_txt, (board.MARGIN_LEFT + 10, board.BOARD_HEIGHT + board.MARGIN_BOTTOM + 10))
 
-            # Then also draw your time control overlay (if open):
-        self.draw_time_control_overlay()
-    
     def handle_board_click(self, pos):
-        if self.time_control_mode:
-            if self.time_control_overlay_rect and self.time_control_overlay_rect.collidepoint(pos):
-                # Check which option was clicked
-                for rect, label, wsecs, bsecs, inc in self.time_control_options:
-                    if rect.collidepoint(pos):
-                        # user picked that time
-                        self.chess_clock = ChessClock(wsecs, bsecs, inc)
-                        self.chess_clock.start('white')  # White moves first
-                        self.time_control_mode = False
-                        return
-            # clicked outside => close or do nothing
-            self.time_control_mode = False
-            return
-
         # handle promotion overlay        
         if self.promotion_mode:
             if self.promotion_overlay_rect and self.promotion_overlay_rect.collidepoint(pos):
+                # Player selected a promotion option.
                 for rect_, p_type in self.promotion_options:
                     if rect_.collidepoint(pos):
                         pr, pc = self.promotion_pos
+                        # Update the pawn to the chosen piece type.
                         self.board[pr][pc].type = p_type
                         self.move_log[-1] = self.move_log[-1] + f"={p_type}"
                         self.promotion_mode = False
@@ -613,36 +1094,35 @@ class Game:
                         self.promotion_color = None
                         self.clear_valid_actions()
                         self.end_turn()
+                        #print("turn ended now ", self.turn, "'s turn")
+                        return
             else:
+                # Player clicked off the promotion overlay: cancel the promotion.
                 if self.pre_promotion_state:
                     self.board = copy.deepcopy(self.pre_promotion_state['board'])
                     self.move_log = self.pre_promotion_state['move_log'][:]
-                    self.promotion_pos = self.pre_promotion_state['promotion_pos']
-                    self.promotion_color = self.pre_promotion_state['promotion_color']
-                    self.selected_piece_pos = self.pre_promotion_state['selected']
+                    # Restore the pawn to its original position stored in 'selected'
+                    orig_pos = self.pre_promotion_state['selected']
+                    if orig_pos:
+                        pr, pc = orig_pos
+                        # Find the pawn at the promotion square.
+                        promo_pos = self.pre_promotion_state['promotion_pos']
+                        pawn = self.board[promo_pos[0]][promo_pos[1]]
+                        self.board[pr][pc] = pawn  # move pawn back
+                        self.board[promo_pos[0]][promo_pos[1]] = None
+                    self.turn = self.pre_promotion_state['turn']
                     self.en_passant = self.pre_promotion_state['en_passant']
                     self.halfmove_clock = self.pre_promotion_state['halfmove_clock']
-                    self.turn = self.pre_promotion_state['turn']
+                self.selected_piece_pos = None
                 self.promotion_mode = False
                 self.promotion_pos = None
                 self.promotion_color = None
                 self.clear_valid_actions()
-            return
+                return
 
         board_x = board.MARGIN_LEFT
         board_y = 0
 
-        # handle pause menu
-        if self.pause_menu:
-            for rect_, action, lbl in self.pause_menu_options:
-                if rect_.collidepoint(pos):
-                    if action == 'new_game':
-                        self.new_game()
-                        self.pause_menu = False
-                    elif action == 'quit':
-                        pygame.quit()
-                        sys.exit()
-            return
 
         # handle purchase overlay
         if self.purchase_mode and self.purchase_overlay_rect:
@@ -718,6 +1198,7 @@ class Game:
                 self.selected_piece_pos = None
                 self.clear_valid_actions()
                 self.end_turn()
+                #print("turn ended now ", self.turn, "'s turn")
             else:
                 if self.pre_purchase_state:
                     self.board = copy.deepcopy(self.pre_purchase_state['board'])
@@ -751,6 +1232,7 @@ class Game:
                     self.selected_piece_pos = None
                     self.clear_valid_actions()
                     self.end_turn()
+                    #print("turn ended now ", self.turn, "'s turn")
                 elif piece.type == 'K':
                     self.purchase_mode = True
                     self.create_purchase_options(row, col)
@@ -774,6 +1256,7 @@ class Game:
                         self.selected_piece_pos = None
                         self.clear_valid_actions()
                         self.end_turn()
+                        #print("turn ended now ", self.turn, "'s turn")
                 else:
                     p2 = self.board[row][col]
                     if p2 and p2.color == self.turn:
@@ -782,6 +1265,84 @@ class Game:
                     else:
                         self.selected_piece_pos = None
                         self.clear_valid_actions()
+
+    def process_pause_menu_click(self, pos):
+        """
+        Process clicks on any active pause menu overlays:
+        - New Game submenu (local hotseat or AI)
+        - Time control submenu (including "None")
+        - Main pause menu (New Game / Quit)
+        """
+        # Process New Game submenu if active.
+        if hasattr(self, 'new_game_overlay_rect') and self.new_game_overlay_rect:
+            for rect, action, label in self.new_game_options:
+                if rect.collidepoint(pos):
+                    if action == 'hotseat':
+                        self.ai_enabled = False
+                        self.new_game()  # Start local hotseat game.
+                        self.new_game_overlay_rect = None
+                        self.pause_menu = False
+                    elif action in ['ai_black', 'ai_white', 'ai_random']:
+                        self.ai_enabled = True
+                        if action == 'ai_black':
+                            chosen_color = 'black'
+                        elif action == 'ai_white':
+                            chosen_color = 'white'
+                        else:
+                            chosen_color = random.choice(['black', 'white'])
+                        self.ai_color = chosen_color
+                        # Optionally, set the AI instance's color as well.
+                        # Now show time control submenu.
+                        self.create_time_control_submenu_options()
+                        self.new_game_overlay_rect = None
+                    return
+
+        # Process Time Control submenu if active.
+        elif hasattr(self, 'time_control_overlay_rect') and self.time_control_overlay_rect:
+            for rect, label, wsecs, bsecs, inc in self.time_control_options:
+                if rect.collidepoint(pos):
+                    if label == 'None':
+                        self.chess_clock = None
+                    else:
+                        self.chess_clock = ChessClock(wsecs, bsecs, inc)
+                        self.chess_clock.start('white')
+                        #print("Chess clock started:", self.chess_clock.white_time, self.chess_clock.black_time)
+                    # Start new game after time control selection.
+                    self.new_game()
+                    self.pause_menu = False
+                    self.time_control_overlay_rect = None
+                    return
+
+        # Otherwise, process the main pause menu.
+        else:
+            if self.pause_overlay_rect and self.pause_overlay_rect.collidepoint(pos):
+                for rect, action, label in self.pause_menu_options:
+                    if rect.collidepoint(pos):
+                        if action == 'new_game':
+                            self.create_new_game_options()
+                        elif action == 'quit':
+                            pygame.quit()
+                            sys.exit()
+                        break
+            else:
+                # Click outside the pause overlay closes it.
+                self.pause_menu = False
+    def has_insufficient_material(self):
+        pieces = []
+        for row in self.board:
+            for piece in row:
+                if piece is not None:
+                    pieces.append(piece)
+        # If only kings remain.
+        if len(pieces) <= 2:
+            return True
+        # King and one minor piece (knight or bishop) is insufficient.
+        if len(pieces) == 3:
+            for piece in pieces:
+                if piece.type != "K" and piece.type in ["N", "B"]:
+                    return True
+        # Optionally add more conditions for specific cases.
+        return False
 
     def end_turn(self):
         self.turn = 'black' if self.turn == 'white' else 'white'
@@ -812,12 +1373,25 @@ class Game:
             else:
                 self.game_over = True
                 self.winner = "draw"
+        # New insufficient material check.
+        if self.has_insufficient_material():
+            self.game_over = True
+            self.winner = "draw"
+            return
+
+        if not self.has_any_legal_moves(self.turn):
+            if self.is_in_check(self.turn):
+                self.game_over = True
+                self.winner = 'black' if self.turn == 'white' else 'white'
+            else:
+                self.game_over = True
+                self.winner = "draw"
 
     def update(self):
         self.screen.fill((0,0,0))
 
         # If we have a clock, update it
-        if self.chess_clock and not self.time_control_mode and not self.game_over:
+        if self.chess_clock and not self.game_over:
             self.chess_clock.update()
             # If time hits 0, you could auto-end
             if self.chess_clock.white_time <= 0:
@@ -830,8 +1404,8 @@ class Game:
         # Draw everything in one go using draw_board() which already includes all drawing logic
         self.draw_board()
         
-        # Draw game state overlays
-        if self.game_over:
+       # Draw game state overlays only if pause menu is not active.
+        if self.game_over and not self.pause_menu:
             s = pygame.Surface((board.WINDOW_WIDTH, board.WINDOW_HEIGHT))
             s.set_alpha(128)
             s.fill((128, 128, 128))
@@ -840,10 +1414,77 @@ class Game:
             font = pygame.font.Font(None, 74)
             if self.winner and self.winner != "draw":
                 text = font.render(f"{self.winner} wins!", True, (255, 255, 255))
+                print(f"{self.winner} wins!")
             else:
                 text = font.render("Draw!", True, (255, 255, 255))
+                print("Draw!")
             text_rect = text.get_rect(center=(board.WINDOW_WIDTH/2, board.WINDOW_HEIGHT/2))
             self.screen.blit(text, text_rect)
+            self.clock.tick(30)
+
+    def move_to_index(self, action_type, src, dst, purchase_type):
+        board_size = board.BOARD_SIZE  # typically 8
+        standard_move_space = board_size * board_size * board_size * board_size  # 4096
+
+        if action_type == "move":
+            # Map a standard move: (src, dst) -> index in [0, 4095]
+            src_index = src[0] * board_size + src[1]
+            dst_index = dst[0] * board_size + dst[1]
+            return src_index * (board_size * board_size) + dst_index
+
+        elif action_type == "collect_gold":
+            # Reserve the index immediately after standard moves.
+            return standard_move_space  # index 4096
+
+        elif action_type == "purchase":
+            # Reserve a block for purchase actions.
+            purchase_types = ['P', 'N', 'B', 'R', 'Q']
+            if purchase_type not in purchase_types:
+                raise ValueError("Invalid purchase type")
+            purchase_index = purchase_types.index(purchase_type)
+            purchase_block_start = standard_move_space + 1  # after collect_gold
+            # Map the destination square for purchase.
+            dst_index = dst[0] * board_size + dst[1]
+            return purchase_block_start + purchase_index * (board_size * board_size) + dst_index
+
+        elif action_type == "transfer_gold":
+            # Reserve a block for gold transfers after the previous actions.
+            purchase_block_size = 5 * (board_size * board_size)
+            transfer_block_start = standard_move_space + 1 + purchase_block_size
+            # Map the gold transfer as a function of both the source and target squares.
+            src_index = src[0] * board_size + src[1]
+            dst_index = dst[0] * board_size + dst[1]
+            return transfer_block_start + src_index * (board_size * board_size) + dst_index
+
+        else:
+            raise ValueError("Unknown action type")
+
+    def get_random_move(self):
+        moves = []
+        for r in range(len(self.board)):
+            for c in range(len(self.board[r])):
+                piece = self.board[r][c]
+                if piece and piece.color == self.turn:
+                    legal_moves = board.get_valid_moves(piece, (r, c), self.board, self.en_passant)
+                    for move in legal_moves:
+                        if self.simulate_move_is_safe((r, c), move):
+                            moves.append(((r, c), move))
+        if not moves:
+            print("No legal moves found in get_random_move!")
+        return random.choice(moves) if moves else None
+
+    def is_game_over(self):
+        return self.game_over
+
+    def get_outcome(self):
+        if not self.game_over:
+            return None  # Game not finished yet
+        if self.winner == "draw":
+            # Check if the draw resulted from reaching max moves
+            if hasattr(self, "max_moves_reached") and self.max_moves_reached:
+                return -5    # Strongly discourage a forced draw
+            else:
+                return -0.5  # Only slightly discourage a natural draw
+        # For wins, reward white wins strongly and punish losses moderately.
+        return 5 if self.winner == "white" else -3
         
-        pygame.display.flip()
-        self.clock.tick(30)
