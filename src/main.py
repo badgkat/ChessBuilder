@@ -1,16 +1,17 @@
-import pygame, sys, copy, pyperclip
+import pygame, sys, pyperclip
 from pathlib import Path
 from . import assets
 from . import board
 from . import game
 from .game import Game
 
+
 def main():
     pygame.init()
     screen = pygame.display.set_mode((board.WINDOW_WIDTH, board.WINDOW_HEIGHT))
     pygame.display.set_caption("Chess Builder with Draw Rules")
     game = Game(screen)
-    
+
     while True:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -19,26 +20,10 @@ def main():
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     if game.purchase_mode:
-                        if game.pre_purchase_state:
-                            game.board = copy.deepcopy(game.pre_purchase_state['board'])
-                            game.move_log = game.pre_purchase_state['move_log'][:]
-                            game.selected_piece_pos = game.pre_purchase_state['selected']
-                            game.turn = game.pre_purchase_state['turn']
-                            game.en_passant = game.pre_purchase_state['en_passant']
-                            game.halfmove_clock = game.pre_purchase_state['halfmove_clock']
-                            game.valid_purchase_placement = game.pre_purchase_state['valid_purchase_placement'][:]
-                            game.error_message = game.pre_purchase_state['error_message']
+                        game.restore_purchase_state()
                         game.purchase_mode = False
                     elif game.promotion_mode:
-                        if game.pre_promotion_state:
-                            game.board = copy.deepcopy(game.pre_promotion_state['board'])
-                            game.move_log = game.pre_promotion_state['move_log'][:]
-                            game.promotion_pos = game.pre_promotion_state['promotion_pos']
-                            game.promotion_color = game.pre_promotion_state['promotion_color']
-                            game.selected_piece_pos = game.pre_promotion_state['selected']
-                            game.en_passant = game.pre_promotion_state['en_passant']
-                            game.halfmove_clock = game.pre_promotion_state['halfmove_clock']
-                            game.turn = game.pre_promotion_state['turn']
+                        game.restore_promotion_state()
                         game.promotion_mode = False
                     else:
                         game.toggle_pause_menu()
@@ -55,6 +40,7 @@ def main():
                 game.handle_board_click(pos)
 
         game.update()
+
 
 if __name__ == "__main__":
     main()

@@ -11,6 +11,7 @@ def pygame_headless():
     Then initialize pygame once, and quit after tests.
     """
     import os
+
     os.environ["SDL_VIDEODRIVER"] = "dummy"
     pygame.init()
     yield
@@ -18,7 +19,9 @@ def pygame_headless():
 
 
 @pytest.mark.usefixtures("pygame_headless")
-@patch("pygame.quit")  # Optional: so the display doesn't close & cause "display Surface quit" errors
+@patch(
+    "pygame.quit"
+)  # Optional: so the display doesn't close & cause "display Surface quit" errors
 @patch("sys.exit", side_effect=SystemExit)
 def test_main_quits_on_quit_event(mock_exit, mock_quit):
     """
@@ -26,6 +29,7 @@ def test_main_quits_on_quit_event(mock_exit, mock_quit):
     """
     import pygame
     from unittest.mock import MagicMock
+
     mock_event = MagicMock()
     mock_event.type = pygame.QUIT
 
@@ -35,12 +39,13 @@ def test_main_quits_on_quit_event(mock_exit, mock_quit):
         with pytest.raises(SystemExit):
             main.main()
 
-    # Optionally, assert these were called. 
+    # Optionally, assert these were called.
     # (Note that because sys.exit is replaced with side_effect=SystemExit,
     #  it won't increment call_count in some versions of Python/pytest.)
     print("pygame.quit call count:", mock_quit.call_count)
     print("sys.exit call count:", mock_exit.call_count)
-    
+
+
 @pytest.mark.usefixtures("pygame_headless")
 def test_main_handles_keydown_esc():
     """

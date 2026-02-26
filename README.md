@@ -11,7 +11,7 @@ A custom chess variant in Pygame featuring:
 
 1. **Gold Accumulation**  
    - When it's your turn click a pawn you've already selected once to collect gold.  
-   - Captured pieces add their accumulated gold to the capturing piece.
+   - Capturing a piece awards its accumulated gold plus its piece cost (Pawn=1, Knight=3, Bishop=3, Rook=5, Queen=9).
    - To transfer gold click the transfering piece and then click the friendly piece you wish to recieve the gold. The recieving piece must be in a square that the transfering piece could move to. 
 
 2. **Purchases**  
@@ -72,13 +72,17 @@ If you want to contribute or modify the code:
 
 ## Running
 
-Within the project directory, run:
+If installed via pip:
 
 ```bash
-python main.py
+chessbuilder
 ```
 
-(or `python3 main.py` on some systems)
+Or from source:
+
+```bash
+python src/main.py
+```
 
 ## Usage
 

@@ -41,7 +41,7 @@ All source code lives in `src/`, tests in `tests/`.
 
 ## Key Mechanics
 
-- **Gold system**: Pieces gain gold from captures (equal to captured piece's cost: Pawn=1, Knight=3, Bishop=3, Rook=5, Queen=9). Pawns can collect 1 gold by clicking them twice. Gold can be transferred to friendly pieces within capture range.
+- **Gold system**: Pieces gain gold from captures (captured piece's accumulated gold + its cost: Pawn=1, Knight=3, Bishop=3, Rook=5, Queen=9). Pawns can collect 1 gold by clicking them twice. Gold can be transferred to friendly pieces within capture range.
 - **Piece purchasing**: Double-click king to open purchase overlay. Pieces are placed on empty squares adjacent to the king.
 - **Draw detection**: Threefold repetition (position history dict), 50-move rule (100 halfmove counter), and stalemate.
 - **Board perspective**: Coordinates transform between internal (row, col) and display coords based on whose turn it is (white views from bottom, black from top).
