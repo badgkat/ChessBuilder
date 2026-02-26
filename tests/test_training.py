@@ -1,0 +1,83 @@
+import pytest
+import pygame
+import os
+import sys
+import numpy as np
+
+from src.game import Game
+from src import board
+
+
+@pytest.fixture(scope="module")
+def pygame_init():
+    pygame.init()
+    screen = pygame.display.set_mode((1, 1))
+    yield
+    pygame.display.quit()
+    pygame.quit()
+
+
+@pytest.fixture
+def game_instance(pygame_init):
+    screen = pygame.display.set_mode((board.WINDOW_WIDTH, board.WINDOW_HEIGHT))
+    g = Game(screen)
+    return g
+
+
+def test_selfplay_random_game_completes(game_instance):
+    """A game played with random moves terminates."""
+    g = game_instance
+    g.new_game()
+    max_moves = 300
+    moves_made = 0
+    for i in range(max_moves):
+        if g.is_game_over():
+            break
+        move = g.get_random_move()
+        if move is None:
+            break
+        g.apply_move(move)
+        moves_made += 1
+    # At least one move was made
+    assert moves_made > 0
+
+
+def test_training_example_shapes(game_instance):
+    """Training examples have correct shapes throughout a game."""
+    g = game_instance
+    g.new_game()
+    for _ in range(10):
+        if g.is_game_over():
+            break
+        state, policy, player = g.get_training_example()
+        assert state.shape == (13, 8, 8)
+        assert policy.shape == (8513,)
+        assert player in ('white', 'black')
+        assert policy.sum() > 0  # Should have at least one legal action
+
+        move = g.get_random_move()
+        if move is None:
+            break
+        g.apply_move(move)
+
+
+def test_move_to_index_round_trip(game_instance):
+    """move_to_index produces valid indices for all action types."""
+    g = game_instance
+    g.new_game()
+
+    # Standard move
+    idx = g.move_to_index("move", (6, 4), (5, 4), None)
+    assert 0 <= idx < 4096
+
+    # Collect gold
+    idx = g.move_to_index("collect_gold", (6, 4), None, None)
+    assert idx == 4096
+
+    # Purchase
+    idx = g.move_to_index("purchase", (7, 4), (6, 3), 'N')
+    assert 4097 <= idx < 4097 + 320
+
+    # Transfer gold
+    idx = g.move_to_index("transfer_gold", (6, 4), (5, 3), None)
+    assert 4097 + 320 <= idx < 8513
