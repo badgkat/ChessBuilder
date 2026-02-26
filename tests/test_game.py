@@ -266,3 +266,16 @@ def test_apply_move_capture_transfers_gold(game_instance):
     move = ("move", (4, 4), (3, 3), None)
     g.apply_move(move)
     assert g.board[3][3].gold == 8  # 3 + 5
+
+
+def test_purchase_adjacency_enforced(game_instance):
+    """apply_move rejects purchases not adjacent to king."""
+    g = game_instance
+    g.new_game()
+    king = g.board[7][4]
+    king.gold = 5
+    # Try to purchase a rook far from king
+    move = ("purchase", (7, 4), (0, 0), 'R')
+    g.apply_move(move)
+    assert g.board[0][0] is None  # Should not have placed
+    assert g.error_message != ""

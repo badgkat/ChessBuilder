@@ -549,12 +549,21 @@ class Game:
                 elif king.gold < cost:
                     self.error_message = "Not enough gold for purchase."
                 else:
-                    self.purchase_piece(dst, purchase_type)
-                    self.move_log.append(f"${purchase_type}{board.square_to_notation(dst[0], dst[1])}")
-                    king.gold -= cost
-                    self.halfmove_clock += 1
+                    # Validate adjacency to king
+                    kr, kc = king_pos
+                    if abs(kr - dst[0]) > 1 or abs(kc - dst[1]) > 1:
+                        self.error_message = "Purchase must be adjacent to king."
+                    elif self.board[dst[0]][dst[1]] is not None:
+                        self.error_message = "Purchase square must be empty."
+                    elif purchase_type == 'P' and (dst[0] == 0 or dst[0] == board.BOARD_SIZE - 1):
+                        self.error_message = "Cannot place pawn on first or last rank."
+                    else:
+                        self.purchase_piece(dst, purchase_type)
+                        self.move_log.append(f"${purchase_type}{board.square_to_notation(dst[0], dst[1])}")
+                        king.gold -= cost
+                        self.halfmove_clock += 1
 
-            if not simulate:
+            if not simulate and not self.error_message:
                 self.end_turn()
                 #print("turn ended now ", self.turn, "'s turn")
 
