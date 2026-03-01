@@ -134,81 +134,8 @@ class Game:
             noise_tensor = torch.tensor(noise, dtype=torch.float32, device=device)
             probs = (1 - epsilon) * probs + epsilon * noise_tensor
 
-        # 2. Build the list of legal actions.
-        board_size = board.BOARD_SIZE
-        legal_actions = []
-        
-        # a. Standard moves (including captures and promotions).
-        for r in range(board_size):
-            for c in range(board_size):
-                piece = self.board[r][c]
-                if piece and piece.color == self.turn:
-                    moves = board.get_valid_moves(piece, (r, c), self.board, self.en_passant)
-                    for move in moves:
-                        candidate = ("move", (r, c), move, None)
-                        if self.is_move_legal(candidate):
-                            if piece.type == 'P' and self.move_leads_to_promotion(piece, (r, c), move):
-                                for promo in ['Q', 'R', 'B', 'N']:
-                                    candidate_promo = ("move", (r, c), move, promo)
-                                    if self.is_move_legal(candidate_promo):
-                                        legal_actions.append(candidate_promo)
-                            else:
-                                legal_actions.append(candidate)
-        
-        # b. Gold collection actions.
-        for r in range(board_size):
-            for c in range(board_size):
-                piece = self.board[r][c]
-                if piece and piece.color == self.turn and piece.type == 'P':
-                    candidate = ("collect_gold", (r, c), None, None)
-                    if self.is_move_legal(candidate):
-                        legal_actions.append(candidate)
-        
-        # c. Purchase actions.
-        king, king_pos = None, None
-        for r in range(board_size):
-            for c in range(board_size):
-                piece = self.board[r][c]
-                if piece and piece.color == self.turn and piece.type == 'K':
-                    king, king_pos = piece, (r, c)
-                    break
-            if king_pos:
-                break
-        if king and king.gold > 0:
-            r, c = king_pos
-            adjacent = []
-            for dr in [-1, 0, 1]:
-                for dc in [-1, 0, 1]:
-                    if dr == 0 and dc == 0:
-                        continue
-                    nr, nc = r + dr, c + dc
-                    if board.in_bounds(nr, nc) and self.board[nr][nc] is None:
-                        adjacent.append((nr, nc))
-            purchase_squares = [sq for sq in adjacent if self.board[sq[0]][sq[1]] is None]
-            for candidate_square in purchase_squares:
-                for p_type in ['P', 'N', 'B', 'R', 'Q']:
-                    cost = board.PIECE_COST.get(p_type)
-                    candidate = ("purchase", king_pos, candidate_square, p_type)
-                    if cost is not None and king.gold >= cost and self.is_move_legal(candidate):
-                        legal_actions.append(candidate)
-        
-        # d. Transfer gold actions.
-        # For each friendly piece with gold, allow transferring its entire gold to another friendly piece
-        # that is on a square visible from the source piece.
-        for r in range(board_size):
-            for c in range(board_size):
-                piece = self.board[r][c]
-                if piece and piece.color == self.turn and piece.gold > 0:
-                    # Get squares that this piece can "see".
-                    visible_squares = board.get_visible_squares(piece, (r, c), self.board)
-                    for target in visible_squares:
-                        tr, tc = target
-                        target_piece = self.board[tr][tc]
-                        # Only allow transfer if the target square has a friendly piece.
-                        if target_piece and target_piece.color == self.turn:
-                            candidate = ("transfer_gold", (r, c), (tr, tc), None)
-                            if self.is_move_legal(candidate):
-                                legal_actions.append(candidate)
+        # 2. Build the list of legal actions (shared method).
+        legal_actions = self.get_legal_actions()
         
         # 3. Map each legal action to its corresponding index.
         action_indices = []
@@ -393,69 +320,7 @@ class Game:
         board_state = self.encode_board_state()
         total_actions = 8513
         policy_target = np.zeros(total_actions, dtype=np.float32)
-        legal_actions = []
-
-        board_size = board.BOARD_SIZE
-
-        # 1. Standard moves (including promotions)
-        for r in range(board_size):
-            for c in range(board_size):
-                piece = self.board[r][c]
-                if piece and piece.color == self.turn:
-                    moves = board.get_valid_moves(piece, (r, c), self.board, self.en_passant)
-                    for move in moves:
-                        if self.simulate_move_is_safe((r, c), move):
-                            if piece.type == 'P' and self.move_leads_to_promotion(piece, (r, c), move):
-                                for promo in ['Q', 'R', 'B', 'N']:
-                                    legal_actions.append(("move", (r, c), move, promo))
-                            else:
-                                legal_actions.append(("move", (r, c), move, None))
-
-        # 2. Gold collection (pawns, not in check)
-        if not self.is_in_check(self.turn):
-            for r in range(board_size):
-                for c in range(board_size):
-                    piece = self.board[r][c]
-                    if piece and piece.color == self.turn and piece.type == 'P':
-                        legal_actions.append(("collect_gold", (r, c), None, None))
-
-        # 3. Purchase actions (based on king gold and adjacency)
-        king, king_pos = None, None
-        for r in range(board_size):
-            for c in range(board_size):
-                piece = self.board[r][c]
-                if piece and piece.color == self.turn and piece.type == 'K':
-                    king, king_pos = piece, (r, c)
-                    break
-            if king_pos:
-                break
-        if king and king.gold > 0:
-            kr, kc = king_pos
-            for dr in [-1, 0, 1]:
-                for dc in [-1, 0, 1]:
-                    if dr == 0 and dc == 0:
-                        continue
-                    nr, nc = kr + dr, kc + dc
-                    if board.in_bounds(nr, nc) and self.board[nr][nc] is None:
-                        for p_type in ['P', 'N', 'B', 'R', 'Q']:
-                            cost = board.PIECE_COST.get(p_type)
-                            if cost and king.gold >= cost:
-                                if p_type == 'P' and (nr == 0 or nr == board.BOARD_SIZE - 1):
-                                    continue
-                                self.board[nr][nc] = board.Piece(p_type, king.color)
-                                if not self.is_in_check(king.color):
-                                    legal_actions.append(("purchase", king_pos, (nr, nc), p_type))
-                                self.board[nr][nc] = None
-
-        # 4. Gold transfers (not in check, pieces with gold)
-        if not self.is_in_check(self.turn):
-            for r in range(board_size):
-                for c in range(board_size):
-                    piece = self.board[r][c]
-                    if piece and piece.color == self.turn and piece.gold > 0:
-                        visible = board.get_visible_squares(piece, (r, c), self.board)
-                        for target in visible:
-                            legal_actions.append(("transfer_gold", (r, c), target, None))
+        legal_actions = self.get_legal_actions()
 
         # Uniform distribution over legal actions
         if legal_actions:
@@ -1585,7 +1450,7 @@ class Game:
                         for p_type in ['P', 'N', 'B', 'R', 'Q']:
                             cost = board.PIECE_COST.get(p_type)
                             if cost and king.gold >= cost:
-                                if p_type == 'P' and (nr == 0 or nr == board.BOARD_SIZE - 1):
+                                if p_type == 'P' and (nr == 0 or nr == board_size - 1):
                                     continue
                                 self.board[nr][nc] = board.Piece(p_type, king.color)
                                 if not self.is_in_check(king.color):
