@@ -31,7 +31,7 @@ def iterative_training(num_iterations=10, games_per_iter=50, epochs_per_iter=5, 
     for iteration in range(num_iterations):
         print(f"\n=== Iteration {iteration}: Generating self-play data ===")
         # Use the current model for self-play.
-        generate_selfplay_data(num_games=games_per_iter, model=model, device=device)
+        generate_selfplay_data(num_games=games_per_iter, model=model, device=device, iteration=iteration)
         
         print(f"=== Iteration {iteration}: Training model ===")
         # Load the newly generated data.

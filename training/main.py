@@ -56,7 +56,7 @@ class TrainingWorker(QThread):
                 if self.isInterruptionRequested():
                     self.log_signal.emit("Training interrupted during data generation.")
                     break
-                generate_selfplay_data(num_games=1, model=model, device=device)
+                generate_selfplay_data(num_games=1, model=model, device=device, iteration=iteration)
                 current_step += 1
                 self.progress_signal.emit(current_step)
             
