@@ -158,6 +158,22 @@ def test_get_outcome_values_within_tanh_range(game_instance):
     assert g.get_outcome() == 0
 
 
+def test_parallel_selfplay_generates_data():
+    """Parallel selfplay with multiple workers should produce training data."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmpdir:
+        data_path = os.path.join(tmpdir, 'training_data.npz')
+        from training.selfplay import generate_selfplay_data
+        generate_selfplay_data(
+            num_games=4, model=None, device=None,
+            data_path=data_path, num_workers=2,
+        )
+        assert os.path.exists(data_path)
+        data = np.load(data_path)
+        assert data['states'].shape[0] > 0
+        data.close()
+
+
 def test_full_pipeline_with_improvements():
     """Smoke test: selfplay with replay buffer -> augmented dataset -> residual model training."""
     import tempfile
