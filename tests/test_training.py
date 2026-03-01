@@ -133,3 +133,45 @@ def test_model_residual_architecture():
     # Model should have more parameters than old 2-layer version (~50k)
     num_params = sum(p.numel() for p in model.parameters())
     assert num_params > 500_000, f"Model too small: {num_params} params"
+
+
+def test_full_pipeline_with_improvements():
+    """Smoke test: selfplay with replay buffer -> augmented dataset -> residual model training."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmpdir:
+        data_path = os.path.join(tmpdir, 'training_data.npz')
+
+        # Run 3 selfplay games (random, no model)
+        from training.selfplay import generate_selfplay_data
+        generate_selfplay_data(num_games=3, model=None, device=None, data_path=data_path, iteration=0)
+        assert os.path.exists(data_path)
+
+        # Run 2 more games — replay buffer should append
+        generate_selfplay_data(num_games=2, model=None, device=None, data_path=data_path, iteration=1)
+        data = np.load(data_path)
+        total_examples = data['states'].shape[0]
+        data.close()
+        assert total_examples > 0
+
+        # Load with augmentation
+        from training.dataset import ChessDataset
+        ds = ChessDataset(data_file=data_path, augment=True)
+        assert len(ds) == total_examples * 2
+
+        # Train 1 batch with new model
+        from training.model import ChessNet
+        import torch
+        device = torch.device('cpu')
+        model = ChessNet(num_channels=13, policy_size=8513).to(device)
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+        loader = torch.utils.data.DataLoader(ds, batch_size=min(32, len(ds)), shuffle=True)
+        batch = next(iter(loader))
+        states, policy_targets, value_targets = [b.to(device) for b in batch]
+        policy_pred, value_pred = model(states)
+        log_probs = torch.nn.functional.log_softmax(policy_pred, dim=1)
+        loss_policy = -torch.sum(policy_targets * log_probs) / policy_targets.shape[0]
+        loss_value = torch.nn.functional.mse_loss(value_pred, value_targets)
+        loss = loss_policy + loss_value
+        loss.backward()
+        optimizer.step()
+        assert loss.item() > 0
