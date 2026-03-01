@@ -371,6 +371,18 @@ def test_get_legal_actions_returns_list(game_instance):
         assert a[0] in ("move", "collect_gold", "purchase", "transfer_gold")
 
 
+def test_headless_game_no_pygame(pygame_init):
+    """Game with headless=True should work without a screen surface."""
+    g = Game(screen=None, headless=True)
+    g.new_game()
+    actions = g.get_legal_actions()
+    assert len(actions) > 0
+    move = g.get_random_move()
+    assert move is not None
+    g.apply_move(move)
+    g.update()  # should be a no-op, not crash
+
+
 def test_get_legal_actions_matches_random_move(game_instance):
     """get_legal_actions should produce the same set as get_random_move draws from."""
     g = game_instance

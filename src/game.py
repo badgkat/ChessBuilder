@@ -9,11 +9,17 @@ import torch
 import torch.nn.functional as F
 
 class Game:
-    def __init__(self, screen):
+    def __init__(self, screen, headless=False):
         self.screen = screen
-        self.clock  = pygame.time.Clock()
-        self.font   = pygame.font.SysFont(None, 24)
-        self.load_images()
+        self.headless = headless
+        if not headless:
+            self.clock = pygame.time.Clock()
+            self.font = pygame.font.SysFont(None, 24)
+            self.load_images()
+        else:
+            self.clock = None
+            self.font = None
+            self.images = {}
         
         self.ai_enabled = False
         self.ai_color = None
@@ -255,7 +261,8 @@ class Game:
         sim.ai_enabled = self.ai_enabled
         sim.ai_color = self.ai_color
         sim.selected_piece_pos = self.selected_piece_pos
-        
+        sim.headless = True  # Simulation copies are always headless
+
         # Exclude non-picklable objects:
         # sim.screen, sim.clock, sim.font, sim.purchase_overlay_rect, sim.promotion_overlay_rect,
         # and sim.time_control_overlay_rect are omitted.
@@ -1331,6 +1338,8 @@ class Game:
             return
 
     def update(self):
+        if self.headless:
+            return
         self.screen.fill((0,0,0))
 
         # If we have a clock, update it
