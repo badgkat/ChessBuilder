@@ -83,6 +83,28 @@ def test_move_to_index_round_trip(game_instance):
     assert 4097 + 320 <= idx < 8513
 
 
+def test_replay_buffer_appends():
+    """Selfplay should append to existing data, not overwrite."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmpdir:
+        data_path = os.path.join(tmpdir, 'training_data.npz')
+        # Create fake existing data
+        existing = {
+            'states': np.random.randn(10, 13, 8, 8).astype(np.float32),
+            'policy_targets': np.random.randn(10, 8513).astype(np.float32),
+            'value_targets': np.random.randn(10, 1).astype(np.float32),
+        }
+        np.savez(data_path, **existing)
+
+        from training.selfplay import generate_selfplay_data
+        generate_selfplay_data(num_games=2, model=None, device=None, data_path=data_path)
+        result = np.load(data_path)
+        num_states = result['states'].shape[0]
+        result.close()  # Close file handle to avoid Windows PermissionError
+        # Should have MORE than the original 10 examples
+        assert num_states > 10
+
+
 def test_model_residual_architecture():
     """New model should have residual blocks and correct output shapes."""
     from training.model import ChessNet
