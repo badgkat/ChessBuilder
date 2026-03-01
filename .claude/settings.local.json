@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pytest:*)",
+      "Bash(python:*)",
+      "Bash(ls:*)",
+      "Bash(.venv/Scripts/python.exe:*)",
+      "Bash(SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy .venv/Scripts/python.exe:*)",
+      "Bash(git:*)",
+      "Bash(pip install:*)",
+      "Bash(python3:*)",
+      "Bash(xxd)",
+      "Bash(done)"
+    ]
+  }
+}
