@@ -66,7 +66,7 @@ def main():
         start_epoch = checkpoint.get('iteration', checkpoint.get('epoch', 0))
         print(f"Resuming training from epoch {start_epoch}")
     
-    dataset = ChessDataset()
+    dataset = ChessDataset(augment=True)
     dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
     
     train(model, optimizer, dataloader, device, start_epoch, num_epochs, checkpoint_path)

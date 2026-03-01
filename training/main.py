@@ -62,7 +62,7 @@ class TrainingWorker(QThread):
             
             self.log_signal.emit(f"=== Iteration {iteration}: Training model ===")
             # Load newly generated data.
-            dataset = ChessDataset()  # Loads training_data.npz.
+            dataset = ChessDataset(augment=True)  # Loads training_data.npz.
             dataloader = torch.utils.data.DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
             
             model.train()

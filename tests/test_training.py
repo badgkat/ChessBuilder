@@ -105,6 +105,22 @@ def test_replay_buffer_appends():
         assert num_states > 10
 
 
+def test_dataset_augmentation_doubles_data():
+    """Dataset with augmentation should have 2x the examples."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmpdir:
+        data_path = os.path.join(tmpdir, 'training_data.npz')
+        states = np.random.randn(5, 13, 8, 8).astype(np.float32)
+        policy = np.zeros((5, 8513), dtype=np.float32)
+        policy[:, 0] = 1.0  # dummy
+        values = np.zeros((5, 1), dtype=np.float32)
+        np.savez(data_path, states=states, policy_targets=policy, value_targets=values)
+
+        from training.dataset import ChessDataset
+        ds = ChessDataset(data_file=data_path, augment=True)
+        assert len(ds) == 10  # 5 original + 5 flipped
+
+
 def test_model_residual_architecture():
     """New model should have residual blocks and correct output shapes."""
     from training.model import ChessNet

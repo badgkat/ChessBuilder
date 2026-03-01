@@ -35,7 +35,7 @@ def iterative_training(num_iterations=10, games_per_iter=50, epochs_per_iter=5, 
         
         print(f"=== Iteration {iteration}: Training model ===")
         # Load the newly generated data.
-        dataset = ChessDataset()  # This loads "training_data.npz"
+        dataset = ChessDataset(augment=True)  # This loads "training_data.npz"
         dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
         
         # Train for a few epochs.
