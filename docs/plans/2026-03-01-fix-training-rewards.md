@@ -132,33 +132,9 @@ git commit -m "fix: raise selfplay max_moves from 200 to 1000"
 
 ---
 
-### Task 4: Delete stale training data and checkpoint
+### Task 4: Delete stale training data and checkpoint — DONE
 
-**Files:**
-- Delete: `training_data.npz`
-- Delete: `models/chess_model_checkpoint.pt`
-
-**Step 1: Delete the files**
-
-```bash
-rm training_data.npz models/chess_model_checkpoint.pt
-```
-
-**Step 2: Verify files are gone**
-
-```bash
-ls training_data.npz models/chess_model_checkpoint.pt
-```
-Expected: "No such file or directory" for both
-
-**Step 3: Commit**
-
-```bash
-git add -u training_data.npz models/chess_model_checkpoint.pt
-git commit -m "chore: wipe stale training data and checkpoint from broken rewards"
-```
-
-Note: Only commit if these files are tracked by git. If they're in `.gitignore`, just delete them without committing.
+Completed pre-migration. Files removed from git tracking, added to `.gitignore`, and deleted.
 
 ---
 
