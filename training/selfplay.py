@@ -19,7 +19,7 @@ def _get_temperature(iteration):
 # Global counter for games played across multiple calls.
 global_game_counter = 0
 
-def generate_selfplay_data(num_games=10, model=None, device=None, check_interruption=None, max_moves=200, data_path=None, max_buffer_size=500_000, iteration=0):
+def generate_selfplay_data(num_games=10, model=None, device=None, check_interruption=None, max_moves=1000, data_path=None, max_buffer_size=500_000, iteration=0):
     """
     Simulate self-play games.
     If a model is provided, it selects moves; otherwise, moves are random.

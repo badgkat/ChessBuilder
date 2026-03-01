@@ -135,6 +135,29 @@ def test_model_residual_architecture():
     assert num_params > 500_000, f"Model too small: {num_params} params"
 
 
+def test_get_outcome_values_within_tanh_range(game_instance):
+    """get_outcome() must return values in [-1, +1] to match tanh output."""
+    g = game_instance
+    g.new_game()
+
+    # White wins
+    g.game_over = True
+    g.winner = "white"
+    assert g.get_outcome() == 1
+
+    # Black wins
+    g.winner = "black"
+    assert g.get_outcome() == -1
+
+    # Natural draw
+    g.winner = "draw"
+    assert g.get_outcome() == 0
+
+    # Forced draw (max moves)
+    g.max_moves_reached = True
+    assert g.get_outcome() == 0
+
+
 def test_full_pipeline_with_improvements():
     """Smoke test: selfplay with replay buffer -> augmented dataset -> residual model training."""
     import tempfile

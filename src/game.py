@@ -1481,13 +1481,8 @@ class Game:
 
     def get_outcome(self):
         if not self.game_over:
-            return None  # Game not finished yet
+            return None
         if self.winner == "draw":
-            # Check if the draw resulted from reaching max moves
-            if hasattr(self, "max_moves_reached") and self.max_moves_reached:
-                return -5    # Strongly discourage a forced draw
-            else:
-                return -0.5  # Only slightly discourage a natural draw
-        # For wins, reward white wins strongly and punish losses moderately.
-        return 5 if self.winner == "white" else -3
+            return 0
+        return 1 if self.winner == "white" else -1
         
