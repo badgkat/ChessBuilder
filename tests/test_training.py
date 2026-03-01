@@ -214,3 +214,38 @@ def test_full_pipeline_with_improvements():
         loss.backward()
         optimizer.step()
         assert loss.item() > 0
+
+
+def test_parallel_selfplay_matches_sequential():
+    """Parallel and sequential selfplay should both produce valid data."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmpdir:
+        seq_path = os.path.join(tmpdir, 'seq.npz')
+        par_path = os.path.join(tmpdir, 'par.npz')
+
+        from training.selfplay import generate_selfplay_data
+        # Sequential
+        generate_selfplay_data(
+            num_games=3, model=None, device=None,
+            data_path=seq_path, num_workers=0,
+        )
+        # Parallel
+        generate_selfplay_data(
+            num_games=3, model=None, device=None,
+            data_path=par_path, num_workers=2,
+        )
+        seq = np.load(seq_path)
+        par = np.load(par_path)
+
+        # Both should have valid shapes
+        assert seq['states'].shape[1:] == (13, 8, 8)
+        assert par['states'].shape[1:] == (13, 8, 8)
+        assert seq['states'].shape[0] > 0
+        assert par['states'].shape[0] > 0
+
+        # Value targets should be within [-1, 1]
+        assert all(-1 <= v <= 1 for v in seq['value_targets'].flatten())
+        assert all(-1 <= v <= 1 for v in par['value_targets'].flatten())
+
+        seq.close()
+        par.close()
