@@ -1,3 +1,6 @@
+# Worktrees
+.worktrees/
+
 # Training artifacts (large binary files)
 training_data.npz
 models/*.pt
