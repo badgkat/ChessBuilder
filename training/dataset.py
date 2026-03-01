@@ -80,5 +80,4 @@ class ChessDataset(Dataset):
             value = self.value_targets[real_idx]
             return state, policy, value
         else:
-            real_idx = idx if not self.augment else idx
-            return self.states[real_idx], self.policy_targets[real_idx], self.value_targets[real_idx]
+            return self.states[idx], self.policy_targets[idx], self.value_targets[idx]

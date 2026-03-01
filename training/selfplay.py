@@ -103,6 +103,10 @@ def generate_selfplay_data(num_games=10, model=None, device=None, check_interrup
             value_targets.append(adjusted_outcome)
 
 
+    if not states:
+        print("No new examples generated, skipping save.")
+        return
+
     new_states = np.array(states, dtype=np.float32)
     new_policy = np.array(policy_targets, dtype=np.float32)
     new_values = np.array(value_targets, dtype=np.float32).reshape(-1, 1)
