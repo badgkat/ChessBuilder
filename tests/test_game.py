@@ -357,3 +357,28 @@ def test_training_example_only_legal_actions(game_instance):
     nonzero = policy[policy > 0]
     assert len(nonzero) > 0
     assert abs(nonzero.max() - nonzero.min()) < 1e-7
+
+
+def test_get_legal_actions_returns_list(game_instance):
+    """get_legal_actions returns a non-empty list of 4-tuples."""
+    g = game_instance
+    g.new_game()
+    actions = g.get_legal_actions()
+    assert isinstance(actions, list)
+    assert len(actions) > 0
+    for a in actions:
+        assert len(a) == 4
+        assert a[0] in ("move", "collect_gold", "purchase", "transfer_gold")
+
+
+def test_get_legal_actions_matches_random_move(game_instance):
+    """get_legal_actions should produce the same set as get_random_move draws from."""
+    g = game_instance
+    g.new_game()
+    actions = g.get_legal_actions()
+    # get_random_move should only return actions that are in get_legal_actions
+    for _ in range(50):
+        g.new_game()
+        move = g.get_random_move()
+        if move:
+            assert move in g.get_legal_actions()

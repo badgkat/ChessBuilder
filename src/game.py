@@ -1537,13 +1537,14 @@ class Game:
         else:
             raise ValueError("Unknown action type")
 
-    def get_random_move(self):
-        """Return a random legal action as a 4-tuple (action_type, src, dst, extra)."""
+    def get_legal_actions(self):
+        """Return list of all legal 4-tuple actions for the current player."""
         legal_actions = []
+        board_size = board.BOARD_SIZE
 
         # 1. Standard moves (including promotions)
-        for r in range(board.BOARD_SIZE):
-            for c in range(board.BOARD_SIZE):
+        for r in range(board_size):
+            for c in range(board_size):
                 piece = self.board[r][c]
                 if piece and piece.color == self.turn:
                     moves = board.get_valid_moves(piece, (r, c), self.board, self.en_passant)
@@ -1557,16 +1558,16 @@ class Game:
 
         # 2. Gold collection (pawns, not in check)
         if not self.is_in_check(self.turn):
-            for r in range(board.BOARD_SIZE):
-                for c in range(board.BOARD_SIZE):
+            for r in range(board_size):
+                for c in range(board_size):
                     piece = self.board[r][c]
                     if piece and piece.color == self.turn and piece.type == 'P':
                         legal_actions.append(("collect_gold", (r, c), None, None))
 
-        # 3. Purchase actions
+        # 3. Purchase actions (king gold, adjacent empty squares)
         king, king_pos = None, None
-        for r in range(board.BOARD_SIZE):
-            for c in range(board.BOARD_SIZE):
+        for r in range(board_size):
+            for c in range(board_size):
                 piece = self.board[r][c]
                 if piece and piece.color == self.turn and piece.type == 'K':
                     king, king_pos = piece, (r, c)
@@ -1591,16 +1592,21 @@ class Game:
                                     legal_actions.append(("purchase", king_pos, (nr, nc), p_type))
                                 self.board[nr][nc] = None
 
-        # 4. Gold transfers (not in check, piece with gold > 0)
+        # 4. Gold transfers (not in check, pieces with gold)
         if not self.is_in_check(self.turn):
-            for r in range(board.BOARD_SIZE):
-                for c in range(board.BOARD_SIZE):
+            for r in range(board_size):
+                for c in range(board_size):
                     piece = self.board[r][c]
                     if piece and piece.color == self.turn and piece.gold > 0:
                         visible = board.get_visible_squares(piece, (r, c), self.board)
                         for target in visible:
                             legal_actions.append(("transfer_gold", (r, c), target, None))
 
+        return legal_actions
+
+    def get_random_move(self):
+        """Return a random legal action as a 4-tuple (action_type, src, dst, extra)."""
+        legal_actions = self.get_legal_actions()
         if not legal_actions:
             return None
         return random.choice(legal_actions)
