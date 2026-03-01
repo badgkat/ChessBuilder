@@ -81,3 +81,17 @@ def test_move_to_index_round_trip(game_instance):
     # Transfer gold
     idx = g.move_to_index("transfer_gold", (6, 4), (5, 3), None)
     assert 4097 + 320 <= idx < 8513
+
+
+def test_model_residual_architecture():
+    """New model should have residual blocks and correct output shapes."""
+    from training.model import ChessNet
+    import torch
+    model = ChessNet(num_channels=13, policy_size=8513)
+    x = torch.randn(2, 13, 8, 8)
+    policy, value = model(x)
+    assert policy.shape == (2, 8513)
+    assert value.shape == (2, 1)
+    # Model should have more parameters than old 2-layer version (~50k)
+    num_params = sum(p.numel() for p in model.parameters())
+    assert num_params > 500_000, f"Model too small: {num_params} params"
