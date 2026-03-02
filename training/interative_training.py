@@ -1,4 +1,5 @@
 # iterative_training.py
+import training.gpu_setup  # noqa: F401 — must precede torch import
 import os
 import time
 import torch

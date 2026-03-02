@@ -1,3 +1,4 @@
+import training.gpu_setup  # noqa: F401 — must precede torch import
 import sys, os, torch
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
     QPushButton, QTextEdit, QLineEdit, QLabel, QFormLayout, QHBoxLayout, QProgressBar)

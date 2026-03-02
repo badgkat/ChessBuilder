@@ -2,7 +2,7 @@
 .worktrees/
 
 # Training artifacts (large binary files)
-training_data.npz
+*training_data.npz
 models/*.pt
 
 # Byte-compiled / optimized / DLL files
