@@ -26,16 +26,19 @@ def iterative_training(
     checkpoint_path = os.path.join(script_dir, '..', 'models', 'chess_model_checkpoint.pt')
     checkpoint_dir = os.path.dirname(checkpoint_path)
 
+    start_iteration = 0
     if os.path.exists(checkpoint_path):
         checkpoint = torch.load(checkpoint_path, map_location=device)
         model.load_state_dict(checkpoint["model_state_dict"])
         optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-        print(f"Loaded model and optimizer from {checkpoint_path}")
+        start_iteration = checkpoint.get("iteration", -1) + 1
+        print(f"Resuming from iteration {start_iteration} (loaded {checkpoint_path})")
 
     if not os.path.exists(checkpoint_dir):
         os.makedirs(checkpoint_dir)
 
-    for iteration in range(num_iterations):
+    end_iteration = start_iteration + num_iterations
+    for iteration in range(start_iteration, end_iteration):
         # === Self-play phase ===
         print(f"\n=== Iteration {iteration}: Generating {games_per_iter} games ({num_workers} workers) ===")
         t0 = time.time()
@@ -85,7 +88,7 @@ def iterative_training(
         }, checkpoint_path)
         print(f"Checkpoint saved. (selfplay={selfplay_time:.0f}s, train={train_time:.0f}s)")
 
-    print("Iterative training complete.")
+    print(f"Iterative training complete. Ran iterations {start_iteration}-{end_iteration - 1}.")
 
 
 if __name__ == "__main__":
