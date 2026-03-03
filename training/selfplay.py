@@ -107,7 +107,7 @@ def _selfplay_worker(args):
 
 def generate_selfplay_data(
     num_games=10, model=None, device=None, check_interruption=None,
-    max_moves=1000, data_path=None, max_buffer_size=500_000,
+    max_moves=50_000, data_path=None, max_buffer_size=500_000,
     iteration=0, num_workers=0,
 ):
     """
