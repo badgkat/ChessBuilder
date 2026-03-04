@@ -27,7 +27,10 @@ def _selfplay_worker(args):
     Runs in a subprocess -- creates its own headless Game instance.
     Each worker is independent with no shared state.
     """
-    num_games, max_moves, iteration, model_state_dict, worker_id = args
+    (
+        num_games, max_moves, iteration, model_state_dict, worker_id,
+        stockfish_ratio, stockfish_depth,
+    ) = args
 
     # Nice this process down so it doesn't compete with priority jobs
     try:
@@ -35,6 +38,7 @@ def _selfplay_worker(args):
     except OSError:
         pass
 
+    import random as _random
     from src.game import Game
 
     states = []
@@ -51,14 +55,32 @@ def _selfplay_worker(args):
         model.load_state_dict(model_state_dict)
         model.train(False)
 
+    # Open one Stockfish engine per worker (reused across games)
+    sf_opponent = None
+    if stockfish_ratio > 0:
+        try:
+            from training.stockfish_opponent import StockfishOpponent
+            sf_opponent = StockfishOpponent(depth=stockfish_depth)
+        except FileNotFoundError:
+            pass  # Stockfish not installed — fall back to pure self-play
+
     for game_idx in range(num_games):
         game_instance = Game(screen=None, headless=True)
         game_instance.new_game()
         move_count = 0
         game_examples = []
 
+        # Decide if this game uses Stockfish and which side it plays
+        use_stockfish = sf_opponent is not None and _random.random() < stockfish_ratio
+        sf_color = _random.choice(["white", "black"]) if use_stockfish else None
+
         while not game_instance.is_game_over() and move_count < max_moves:
-            if model is not None:
+            current_turn = game_instance.turn
+
+            if use_stockfish and current_turn == sf_color:
+                # Stockfish's turn — get its move, don't collect training example
+                move = sf_opponent.get_move(game_instance)
+            elif model is not None:
                 temp = _get_temperature(iteration)
                 move = game_instance.get_model_move(
                     model, device, temperature=temp,
@@ -72,8 +94,11 @@ def _selfplay_worker(args):
                 game_instance.winner = "draw"
                 break
 
-            example = game_instance.get_training_example()
-            game_examples.append(example)
+            # Only collect training examples from the model's turns
+            if not (use_stockfish and current_turn == sf_color):
+                example = game_instance.get_training_example()
+                game_examples.append(example)
+
             game_instance.apply_move(move)
             move_count += 1
 
@@ -95,6 +120,9 @@ def _selfplay_worker(args):
             policy_targets.append(policy)
             value_targets.append(adjusted_outcome)
 
+    if sf_opponent is not None:
+        sf_opponent.close()
+
     if not states:
         return None
 
@@ -109,6 +137,7 @@ def generate_selfplay_data(
     num_games=10, model=None, device=None, check_interruption=None,
     max_moves=50_000, data_path=None, max_buffer_size=500_000,
     iteration=0, num_workers=0,
+    stockfish_ratio=0.0, stockfish_depth=1,
 ):
     """
     Simulate self-play games, optionally in parallel.
@@ -135,7 +164,8 @@ def generate_selfplay_data(
         actual_workers = len(games_per_worker)
 
         worker_args = [
-            (gpw, max_moves, iteration, model_state_dict, i)
+            (gpw, max_moves, iteration, model_state_dict, i,
+             stockfish_ratio, stockfish_depth)
             for i, gpw in enumerate(games_per_worker)
         ]
 
@@ -164,12 +194,22 @@ def generate_selfplay_data(
         new_values = np.concatenate(all_values, axis=0)
     else:
         # Sequential mode (original behavior)
+        import random as _random
         import pygame
         import src.board as board
         from src.game import Game
 
         pygame.init()
         screen = pygame.Surface((board.WINDOW_WIDTH, board.WINDOW_HEIGHT))
+
+        # Open Stockfish for sequential mode if needed
+        sf_opponent = None
+        if stockfish_ratio > 0:
+            try:
+                from training.stockfish_opponent import StockfishOpponent
+                sf_opponent = StockfishOpponent(depth=stockfish_depth)
+            except FileNotFoundError:
+                pass
 
         states = []
         policy_targets = []
@@ -188,6 +228,11 @@ def generate_selfplay_data(
             game_examples = []
             game_instance.new_game()
 
+            use_stockfish = (
+                sf_opponent is not None and _random.random() < stockfish_ratio
+            )
+            sf_color = _random.choice(["white", "black"]) if use_stockfish else None
+
             while not game_instance.is_game_over() and move_count < max_moves:
                 if check_interruption is not None and check_interruption():
                     print(f"Self-play interrupted during game {game_idx}.")
@@ -196,7 +241,11 @@ def generate_selfplay_data(
                 pygame.event.pump()
                 game_instance.update()
 
-                if model is not None:
+                current_turn = game_instance.turn
+
+                if use_stockfish and current_turn == sf_color:
+                    move = sf_opponent.get_move(game_instance)
+                elif model is not None:
                     temp = _get_temperature(iteration)
                     move = game_instance.get_model_move(
                         model, device, temperature=temp,
@@ -210,8 +259,10 @@ def generate_selfplay_data(
                     game_instance.winner = "draw"
                     break
 
-                example = game_instance.get_training_example()
-                game_examples.append(example)
+                if not (use_stockfish and current_turn == sf_color):
+                    example = game_instance.get_training_example()
+                    game_examples.append(example)
+
                 game_instance.apply_move(move)
                 game_instance.update()
                 move_count += 1
@@ -235,6 +286,9 @@ def generate_selfplay_data(
                 states.append(state)
                 policy_targets.append(policy)
                 value_targets.append(adjusted_outcome)
+
+        if sf_opponent is not None:
+            sf_opponent.close()
 
         if not states:
             print("No new examples generated, skipping save.")

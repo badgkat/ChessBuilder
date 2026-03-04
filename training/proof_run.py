@@ -185,5 +185,77 @@ def proof_run():
         print(f"\nCleaned up {data_path}")
 
 
+def stockfish_proof_run():
+    """Smoke test: verify Stockfish opponent produces decisive training data.
+
+    Runs a small batch of games with stockfish_ratio=1.0 and checks that
+    value targets contain non-trivial values (not all zeros/draws).
+    Skips gracefully if Stockfish is not installed.
+    """
+    import shutil
+
+    if shutil.which("stockfish") is None:
+        print("Stockfish not installed — skipping Stockfish proof run.")
+        return
+
+    try:
+        import chess  # noqa: F401
+    except ImportError:
+        print("python-chess not installed — skipping Stockfish proof run.")
+        return
+
+    import numpy as np
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    data_path = os.path.join(script_dir, "..", "proof_stockfish_data.npz")
+
+    if os.path.exists(data_path):
+        os.remove(data_path)
+
+    print(f"\n{'='*60}")
+    print("STOCKFISH PROOF RUN")
+    print(f"{'='*60}")
+
+    t0 = time.time()
+    from training.selfplay import generate_selfplay_data
+
+    generate_selfplay_data(
+        num_games=6,
+        model=None,
+        device=None,
+        iteration=0,
+        num_workers=2,
+        data_path=data_path,
+        stockfish_ratio=1.0,
+        stockfish_depth=1,
+    )
+    elapsed = time.time() - t0
+    print(f"Stockfish games took {elapsed:.1f}s")
+
+    if not os.path.exists(data_path):
+        print("FAIL: No data generated.")
+        return
+
+    data = np.load(data_path)
+    values = data["value_targets"].flatten()
+    data.close()
+
+    unique, counts = np.unique(values, return_counts=True)
+    dist = dict(zip(unique, counts))
+    print(f"Value distribution: {dist}")
+    print(f"Total examples: {len(values)}")
+
+    has_losses = -1.0 in dist
+    has_nonzero = any(v != 0 for v in unique)
+    print(f"\nSanity checks:")
+    print(f"  Has loss values (-1): {'PASS' if has_losses else 'UNCERTAIN (short games may all draw)'}")
+    print(f"  Has non-zero values: {'PASS' if has_nonzero else 'FAIL'}")
+
+    if os.path.exists(data_path):
+        os.remove(data_path)
+        print(f"Cleaned up {data_path}")
+
+
 if __name__ == "__main__":
     proof_run()
+    stockfish_proof_run()

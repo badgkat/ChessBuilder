@@ -10,12 +10,26 @@ from .dataset import ChessDataset
 from .model import ChessNet
 
 
+def _stockfish_depth(iteration):
+    """Curriculum schedule: increase Stockfish depth as training progresses."""
+    if iteration < 20:
+        return 1
+    elif iteration < 50:
+        return 2
+    elif iteration < 100:
+        return 3
+    else:
+        return 5
+
+
 def iterative_training(
     num_iterations=10,
     games_per_iter=200,
     epochs_per_iter=5,
     batch_size=256,
     num_workers=16,
+    stockfish_ratio=0.5,
+    stockfish_depth_schedule=None,
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Training device: {device}")
@@ -37,14 +51,20 @@ def iterative_training(
     if not os.path.exists(checkpoint_dir):
         os.makedirs(checkpoint_dir)
 
+    if stockfish_depth_schedule is None:
+        stockfish_depth_schedule = _stockfish_depth
+
     end_iteration = start_iteration + num_iterations
     for iteration in range(start_iteration, end_iteration):
         # === Self-play phase ===
-        print(f"\n=== Iteration {iteration}: Generating {games_per_iter} games ({num_workers} workers) ===")
+        sf_depth = stockfish_depth_schedule(iteration)
+        sf_info = f", stockfish={stockfish_ratio:.0%} depth={sf_depth}" if stockfish_ratio > 0 else ""
+        print(f"\n=== Iteration {iteration}: Generating {games_per_iter} games ({num_workers} workers{sf_info}) ===")
         t0 = time.time()
         generate_selfplay_data(
             num_games=games_per_iter, model=model, device=device,
             iteration=iteration, num_workers=num_workers,
+            stockfish_ratio=stockfish_ratio, stockfish_depth=sf_depth,
         )
         selfplay_time = time.time() - t0
         print(f"Self-play took {selfplay_time:.1f}s")
